@@ -818,20 +818,7 @@ class FoundryCompanion {
       folderPath
     });
 
-    if (!this.isJournalVisibleToPlayers(entry)) {
-      return this.compactObject({
-        ...base,
-        id: entry.id,
-        title: entry.name,
-        source,
-        configured: true,
-        setupRequired: true,
-        setupMessage: "The selected story Journal is not player-visible. Set the Journal ownership to Limited, Observer, or Owner for players."
-      });
-    }
-
     const chapters = (entry.pages?.contents ?? [])
-      .filter((page) => this.shouldPublishJournalPage(page))
       .map((page, index) => this.serializeStoryChapter(page, index, labelSingular))
       .filter((chapter) => chapter.title || chapter.text || chapter.srcUrl);
 

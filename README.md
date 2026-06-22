@@ -17,7 +17,7 @@ FoundryCompanion is built for Foundry first. Forien's Quest Log is an optional i
 - Includes a GM setting to publish either player-visible sidebar content only, or all standard Foundry sidebar data.
 - Includes **Configure Export Options** checkboxes for Enable Forien Quest Log Exporting, Journal, Contacts, Items, and Character Sheets.
 - Includes optional **5e - Custom Abilities & Skills** (`dnd5e-custom-skills`) support for custom ability and skill labels.
-- Lets the GM choose one Journal Entry as the **Game Session Story** source; each page exports as an individual rich-text chapter/session with image references.
+- Lets the GM choose one Journal Entry as the **Game Session Story** source; each page exports directly as an individual rich-text chapter/session with image references.
 - Game Session Story supports a Chapter/Session label setting, continuous downward reading, and bookmark/return metadata for the companion website.
 - Image export mode can use image links for smaller payloads or image embedding for larger, portable payloads.
 - GM preview uses simple expandable folder/group dropdowns to verify exported data.
@@ -48,6 +48,8 @@ FoundryCompanion is designed to be run by the GM only. Players should not use th
 Website publishing sends standard Foundry data every time. If Forien is active, it also sends the four player-facing Forien tabs and excludes the Inactive tab. Keep sensitive information out of player-facing quest fields, especially descriptions, player notes, visible objectives, and visible rewards.
 
 Journals are always ownership-gated using the Journal ownership object. A Journal entry is exported only when `ownership.default` is Limited or higher, or when at least one non-GM player has Limited, Observer, or Owner access. GM-only ownership does not make a Journal publishable. When Foundry exposes page-level ownership, Journal pages are filtered the same way.
+
+Game Session Story is different from the general Journal sidebar. It is an explicit GM-selected publish source, so its selected Journal pages are exported directly to the companion website without requiring Foundry player ownership. Only choose a Story Journal whose contents are intended for the companion website.
 
 By default, Contacts and world Items are also ownership-gated. Any document visible to at least one non-GM player at Limited permission or higher is included. Character Sheets includes only `character` actors owned by at least one non-GM player.
 
