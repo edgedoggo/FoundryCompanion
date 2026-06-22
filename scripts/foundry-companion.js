@@ -1,0 +1,1820 @@
+const MODULE_ID = "foundry-companion";
+const MIN_PERMISSION = "LIMITED";
+
+const QUEST_STATUS_LABELS = {
+  active: "In Progress",
+  available: "Available",
+  inprogress: "In Progress",
+  "in-progress": "In Progress",
+  "in progress": "In Progress",
+  completed: "Completed",
+  failed: "Failed",
+  inactive: "Inactive",
+  hidden: "Hidden"
+};
+
+const WEBSITE_STATUS_ORDER = ["Available", "In Progress", "Completed", "Failed"];
+const CUSTOM_ABILITIES_SKILLS_MODULE_ID = "dnd5e-custom-skills";
+const EXPORT_OPTION_SETTINGS = {
+  questLog: "exportQuestLog",
+  customAbilitiesSkills: "exportCustomAbilitiesSkills",
+  journal: "exportJournal",
+  contacts: "exportContacts",
+  items: "exportItems",
+  characterSheets: "exportCharacterSheets"
+};
+
+const CUSTOM_ABILITIES_SKILLS_PATTERNS = [
+  /^dnd5e-custom-skills$/i,
+  /custom.*abilit.*skill/i,
+  /abilit.*skill/i,
+  /cua|cus/i
+];
+
+const openApps = new Set();
+let publishTimer = null;
+
+Hooks.once("init", () => {
+  game.settings.registerMenu(MODULE_ID, "companion", {
+    name: "FoundryCompanion",
+    label: "Open",
+    hint: "Open the GM publishing panel for the read-only player website.",
+    icon: "fas fa-book-open",
+    type: FoundryCompanionMenu,
+    restricted: true
+  });
+
+  game.settings.register(MODULE_ID, "worldTitle", {
+    name: "Companion title",
+    hint: "Shown at the top of the preview, exported HTML, and website payload.",
+    scope: "world",
+    config: true,
+    type: String,
+    default: game.world?.title ?? "FoundryCompanion"
+  });
+
+  game.settings.register(MODULE_ID, "refreshSeconds", {
+    name: "Live refresh minutes",
+    hint: "How many minutes between automatic GM preview refreshes while it is open.",
+    scope: "client",
+    config: true,
+    type: Number,
+    default: 1,
+    range: {
+      min: 1,
+      max: 30,
+      step: 1
+    }
+  });
+
+  game.settings.register(MODULE_ID, "publishEndpoint", {
+    name: "Companion API base URL",
+    hint: "Your Replit API base URL, for example https://your-site.replit.app/api/foundry-companion. FoundryCompanion adds /<token>/ping and /<token>/sync.",
+    scope: "world",
+    config: true,
+    restricted: true,
+    type: String,
+    default: ""
+  });
+
+  game.settings.register(MODULE_ID, "publishToken", {
+    name: "Companion API token",
+    hint: "Token from the STARPG console. It is sent in the Replit URL path for ping and sync.",
+    scope: "world",
+    config: true,
+    restricted: true,
+    type: String,
+    default: ""
+  });
+
+  game.settings.register(MODULE_ID, "autoPublish", {
+    name: "Auto-publish website data",
+    hint: "When enabled, the active GM client publishes sanitized quest data after relevant updates.",
+    scope: "world",
+    config: true,
+    restricted: true,
+    type: Boolean,
+    default: false
+  });
+
+  game.settings.register(MODULE_ID, "publishAllSidebarData", {
+    name: "Publish: all sidebar data",
+    hint: "Unchecked publishes only player-visible sidebar data. Checked publishes all Contacts and world Items, while Journals, character sheets, and actor inventory still require player access.",
+    scope: "world",
+    config: false,
+    restricted: true,
+    type: Boolean,
+    default: false
+  });
+
+  game.settings.register(MODULE_ID, "embedImageData", {
+    name: "Use image embedding",
+    hint: "Embed fetched image assets as base64 data URLs in the JSON payload under assets.images. This makes exports larger, but helps Replit render images without reaching back to Foundry.",
+    scope: "world",
+    config: false,
+    restricted: true,
+    type: Boolean,
+    default: false
+  });
+
+  game.settings.register(MODULE_ID, EXPORT_OPTION_SETTINGS.questLog, {
+    name: "Enable Forien Quest Log Exporting",
+    hint: "Publish the optional Forien Quest Log section when Forien's Quest Log is active.",
+    scope: "world",
+    config: false,
+    restricted: true,
+    type: Boolean,
+    default: true
+  });
+
+  game.settings.register(MODULE_ID, EXPORT_OPTION_SETTINGS.customAbilitiesSkills, {
+    name: "Enable Custom Abilities & Skills Exporting",
+    hint: "Use labels and actor data from the optional 5e Custom Abilities & Skills module when it is active.",
+    scope: "world",
+    config: false,
+    restricted: true,
+    type: Boolean,
+    default: true
+  });
+
+  game.settings.register(MODULE_ID, EXPORT_OPTION_SETTINGS.journal, {
+    name: "Configure Export Options: Journal",
+    hint: "Publish Journal sidebar entries and pages.",
+    scope: "world",
+    config: false,
+    restricted: true,
+    type: Boolean,
+    default: true
+  });
+
+  game.settings.register(MODULE_ID, EXPORT_OPTION_SETTINGS.contacts, {
+    name: "Configure Export Options: Contacts",
+    hint: "Publish Actor sidebar records as contacts.",
+    scope: "world",
+    config: false,
+    restricted: true,
+    type: Boolean,
+    default: true
+  });
+
+  game.settings.register(MODULE_ID, EXPORT_OPTION_SETTINGS.items, {
+    name: "Configure Export Options: Items",
+    hint: "Publish Item sidebar records.",
+    scope: "world",
+    config: false,
+    restricted: true,
+    type: Boolean,
+    default: true
+  });
+
+  game.settings.register(MODULE_ID, EXPORT_OPTION_SETTINGS.characterSheets, {
+    name: "Configure Export Options: Character Sheets",
+    hint: "Publish owned player character sheets.",
+    scope: "world",
+    config: false,
+    restricted: true,
+    type: Boolean,
+    default: true
+  });
+});
+
+Hooks.once("ready", () => {
+  if (!game.user.isGM) {
+    console.info(`${MODULE_ID} | Loaded for player client; publishing tools are GM-only.`);
+    return;
+  }
+
+  game.foundryCompanion = {
+    open: () => new FoundryCompanionApp().render(true),
+    exportHtml: () => FoundryCompanion.download(),
+    exportJson: () => FoundryCompanion.download(),
+    publish: () => FoundryCompanion.publishWebsiteData(),
+    debug: () => FoundryCompanion.copyDebugSample()
+  };
+
+  const refresh = () => {
+    FoundryCompanion.refreshOpenApps();
+    FoundryCompanion.queueAutoPublish();
+  };
+  [
+    "createActor",
+    "updateActor",
+    "deleteActor",
+    "createItem",
+    "updateItem",
+    "deleteItem",
+    "createFolder",
+    "updateFolder",
+    "deleteFolder",
+    "createJournalEntry",
+    "updateJournalEntry",
+    "deleteJournalEntry",
+    "createJournalEntryPage",
+    "updateJournalEntryPage",
+    "deleteJournalEntryPage",
+    "updateSetting"
+  ].forEach((hook) => Hooks.on(hook, refresh));
+
+  Hooks.on("renderForienQuestLog", refresh);
+  Hooks.on("closeForienQuestLog", refresh);
+  Hooks.once("ForienQuestLog.Lifecycle.ready", () => {
+    const hooks = game.modules.get("forien-quest-log")?.public?.QuestAPI?.DB?.hooks ?? {};
+    [
+      hooks.addQuestEntry,
+      hooks.createQuestEntry,
+      hooks.deleteQuestEntry,
+      hooks.removeQuestEntry,
+      hooks.removedAllQuestEntries,
+      hooks.updateQuestEntry
+    ].filter(Boolean).forEach((hook) => Hooks.on(hook, refresh));
+    refresh();
+  });
+
+  console.info(`${MODULE_ID} | Ready for GM publishing. Use Configure Settings > Module Settings > FoundryCompanion.`);
+});
+
+class FoundryCompanionMenu extends FormApplication {
+  static get defaultOptions() {
+    return foundry.utils.mergeObject(super.defaultOptions, {
+      id: "foundry-companion-menu",
+      title: "FoundryCompanion",
+      template: `modules/${MODULE_ID}/templates/export-menu.hbs`,
+      width: 520,
+      closeOnSubmit: false
+    });
+  }
+
+  getData() {
+    const payload = FoundryCompanion.buildWebsitePayload();
+    return {
+      count: payload.summary.totalDocuments,
+      username: game.user.name,
+      title: game.settings.get(MODULE_ID, "worldTitle"),
+      exportOptions: payload.exportOptions,
+      publishMode: payload.publishMode,
+      imageMode: payload.imageMode
+    };
+  }
+
+  activateListeners(html) {
+    super.activateListeners(html);
+    html.find("[data-action='open']").on("click", () => {
+      new FoundryCompanionApp().render(true);
+      this.close();
+    });
+    html.find("[data-action='export']").on("click", async () => {
+      await FoundryCompanion.download();
+    });
+    html.find("[data-action='publish']").on("click", async () => {
+      await FoundryCompanion.publishWebsiteData().catch((error) => {
+        console.error(`${MODULE_ID} | Publish failed`, error);
+        ui.notifications.error(error.message);
+      });
+    });
+    html.find("[data-action='test-connection']").on("click", async () => {
+      await FoundryCompanion.testConnection().catch((error) => {
+        console.error(`${MODULE_ID} | Connection test failed`, error);
+        ui.notifications.error(error.message);
+      });
+    });
+    html.find("[data-action='debug']").on("click", async () => {
+      await FoundryCompanion.copyDebugSample();
+    });
+    html.find("[data-export-option]").on("change", async (event) => {
+      const setting = event.currentTarget.dataset.exportOption;
+      await game.settings.set(MODULE_ID, setting, event.currentTarget.checked);
+      this.render(false);
+      FoundryCompanion.refreshOpenApps();
+    });
+    html.find("[data-publish-mode]").on("change", async (event) => {
+      await game.settings.set(MODULE_ID, "publishAllSidebarData", event.currentTarget.value === "all-sidebar-data");
+      this.render(false);
+      FoundryCompanion.refreshOpenApps();
+    });
+    html.find("[data-image-mode]").on("change", async (event) => {
+      await game.settings.set(MODULE_ID, "embedImageData", event.currentTarget.value === "embedded");
+      this.render(false);
+      FoundryCompanion.refreshOpenApps();
+    });
+  }
+}
+
+class FoundryCompanionApp extends Application {
+  static get defaultOptions() {
+    return foundry.utils.mergeObject(super.defaultOptions, {
+      id: "foundry-companion-app",
+      title: "FoundryCompanion",
+      template: `modules/${MODULE_ID}/templates/companion-page.hbs`,
+      width: 900,
+      height: "auto",
+      resizable: true,
+      classes: ["foundry-companion-window"]
+    });
+  }
+
+  getData() {
+    const payload = FoundryCompanion.buildWebsitePayload();
+    return {
+      title: game.settings.get(MODULE_ID, "worldTitle") || "FoundryCompanion",
+      worldTitle: game.world.title,
+      username: game.user.name,
+      updatedAt: new Date().toLocaleTimeString(),
+      count: payload.summary.totalDocuments,
+      navigation: payload.navigation,
+      sections: payload.questLog.sections,
+      questLog: payload.questLog,
+      journal: payload.journal,
+      contacts: payload.contacts,
+      items: payload.items,
+      characterSheets: payload.characterSheets,
+      publishMode: payload.publishMode,
+      exportOptions: payload.exportOptions,
+      summary: payload.summary
+    };
+  }
+
+  activateListeners(html) {
+    super.activateListeners(html);
+    html.find("[data-action='refresh']").on("click", () => this.render(false));
+    html.find("[data-action='export']").on("click", () => FoundryCompanion.download());
+  }
+
+  async _render(force, options) {
+    await super._render(force, options);
+    openApps.add(this);
+    this.startLiveRefresh();
+  }
+
+  close(options) {
+    window.clearInterval(this.refreshTimer);
+    openApps.delete(this);
+    return super.close(options);
+  }
+
+  startLiveRefresh() {
+    window.clearInterval(this.refreshTimer);
+    const minutes = Math.max(1, Number(game.settings.get(MODULE_ID, "refreshSeconds") || 1));
+    this.refreshTimer = window.setInterval(() => this.render(false), minutes * 60 * 1000);
+  }
+}
+
+class FoundryCompanion {
+  static refreshOpenApps() {
+    for (const app of openApps) app.render(false);
+  }
+
+  static queueAutoPublish() {
+    if (!game.user.isGM || !game.settings.get(MODULE_ID, "autoPublish")) return;
+    window.clearTimeout(publishTimer);
+    publishTimer = window.setTimeout(() => {
+      this.publishWebsiteData({ quiet: true }).catch((error) => {
+        console.error(`${MODULE_ID} | Auto-publish failed`, error);
+      });
+    }, 1500);
+  }
+
+  static collectVisibleQuests(user) {
+    return this.collectQuestSources()
+      .flatMap((source) => this.normalizeSource(source))
+      .filter((quest) => quest.sourceType === "forien-quest-entries" || quest.sourceType === "forien-journals" || this.canUserSeeQuest(quest.raw, user))
+      .map((quest) => this.normalizeQuest(quest.raw, quest.source, quest.sourceType))
+      .filter((quest) => this.isWebsiteStatus(quest.status))
+      .filter((quest) => quest.title);
+  }
+
+  static collectWebsiteQuests() {
+    if (!this.hasForienQuestLog()) return [];
+
+    return this.collectQuestSources()
+      .flatMap((source) => this.normalizeSource(source))
+      .map((quest) => this.normalizeQuest(quest.raw, quest.source, quest.sourceType))
+      .filter((quest) => this.isWebsiteStatus(quest.status))
+      .filter((quest) => quest.title);
+  }
+
+  static websiteVisibilityUser() {
+    return game.users.find((user) => !user.isGM && user.active) ??
+      game.users.find((user) => !user.isGM) ??
+      game.user;
+  }
+
+  static collectQuestSources() {
+    const sources = [];
+    const push = (name, value) => {
+      if (value) sources.push({ name, value });
+    };
+
+    const forienDB = game.modules.get("forien-quest-log")?.public?.QuestAPI?.DB;
+    const hasForienAPI = Boolean(forienDB?.getAllQuestEntries);
+    if (hasForienAPI) {
+      push("Forien's Quest Log API", {
+        sourceType: "forien-quest-entries",
+        entries: forienDB.getAllQuestEntries()
+      });
+    }
+
+    const questJournals = game.modules.get("forien-quest-log")?.active && !hasForienAPI ?
+      game.journal?.filter((entry) => Boolean(this.getForienFlagData(entry))) ?? [] :
+      [];
+    push("Journal", {
+      sourceType: "forien-journals",
+      entries: questJournals
+    });
+
+    return this.dedupeSources(sources);
+  }
+
+  static hasForienQuestLog() {
+    return Boolean(game.modules.get("forien-quest-log")?.active &&
+      game.modules.get("forien-quest-log")?.public?.QuestAPI?.DB?.getAllQuestEntries);
+  }
+
+  static dedupeSources(sources) {
+    const seenObjects = new WeakSet();
+    const seenPrimitives = new Set();
+    return sources.filter((source) => {
+      if (source.value && typeof source.value === "object") {
+        if (seenObjects.has(source.value)) return false;
+        seenObjects.add(source.value);
+        return true;
+      }
+
+      const key = `${source.name}:${source.value}`;
+      if (seenPrimitives.has(key)) return false;
+      seenPrimitives.add(key);
+      return true;
+    });
+  }
+
+  static normalizeSource(source) {
+    const value = source.value;
+    if (value?.sourceType === "forien-quest-entries") {
+      return value.entries.map((raw) => ({ raw, source: source.name, sourceType: value.sourceType }));
+    }
+    if (value?.sourceType === "forien-journals") {
+      return value.entries.map((entry) => ({
+        raw: {
+          quest: this.getForienFlagData(entry),
+          journalEntry: entry
+        },
+        source: source.name,
+        sourceType: value.sourceType
+      }));
+    }
+
+    const FoundryCollection = foundry.utils.Collection ?? globalThis.Collection;
+    const entries = FoundryCollection && value instanceof FoundryCollection ? Array.from(value.values()) :
+      value instanceof Map ? Array.from(value.values()) :
+      Array.isArray(value) ? value :
+      Array.isArray(value?.contents) ? value.contents :
+      Array.isArray(value?.entries) ? value.entries :
+      typeof value?.values === "function" ? Array.from(value.values()) :
+      typeof value?.toObject === "function" ? [value] :
+      Object.values(value ?? {});
+
+    return entries
+      .filter((raw) => raw && typeof raw === "object")
+      .map((raw) => ({ raw, source: source.name, sourceType: source.value?.sourceType }));
+  }
+
+  static getForienFlagData(entry) {
+    return entry?.getFlag?.("forien-quest-log", "json") ??
+      entry?.flags?.["forien-quest-log"]?.json ??
+      null;
+  }
+
+  static canUserSeeQuest(quest, user) {
+    if (!quest) return false;
+    if (quest.visible === false || quest.hidden === true) return false;
+
+    if (typeof quest.testUserPermission === "function") {
+      return quest.testUserPermission(user, MIN_PERMISSION);
+    }
+
+    const document = quest.document ?? quest.parent ?? quest.journalEntry ?? quest.entry;
+    if (typeof document?.testUserPermission === "function") {
+      return document.testUserPermission(user, MIN_PERMISSION);
+    }
+
+    const ownership = quest.ownership ?? quest.permission ?? quest.data?.ownership ?? quest.data?.permission;
+    if (!ownership) return game.user?.isGM === true;
+
+    const levels = CONST.DOCUMENT_OWNERSHIP_LEVELS ?? CONST.DOCUMENT_PERMISSION_LEVELS;
+    const none = levels?.NONE ?? 0;
+    const limited = levels?.LIMITED ?? 1;
+    const userLevel = ownership[user.id] ?? ownership[user.role] ?? ownership.default ?? none;
+    return userLevel >= limited;
+  }
+
+  static normalizeQuest(raw, source, sourceType) {
+    if (sourceType === "forien-quest-entries" || sourceType === "forien-journals" || raw?.quest || raw?.enrich) {
+      return this.normalizeForienQuestEntry(raw, source);
+    }
+
+    const data = raw.toObject?.() ?? raw;
+    const system = raw.system ?? data.system ?? raw.data?.data ?? data.data?.data ?? {};
+    const flags = raw.flags ?? data.flags ?? {};
+    const fql = flags["forien-quest-log"] ?? flags.forienQuestLog ?? flags.quests ?? {};
+    const status = this.normalizeStatus(this.firstValue(raw.status, data.status, system.status, fql.status, raw.state, data.state, system.state, raw.type, data.type));
+    const title = this.firstValue(raw.name, data.name, raw.title, data.title, system.name, fql.name, "Untitled Quest");
+    const objectives = this.normalizeList(this.firstValue(raw.objectives, data.objectives, system.objectives, fql.objectives, raw.tasks, data.tasks, system.tasks));
+    const rewards = this.normalizeList(this.firstValue(raw.rewards, data.rewards, system.rewards, fql.rewards), { reward: true });
+    const progress = this.normalizeProgress(raw, data, objectives);
+
+    const image = this.firstValue(raw.img, data.img, raw.image, data.image, raw.icon, data.icon, system.img, fql.img, "");
+
+    return this.compactObject({
+      id: raw.id ?? data._id ?? data.id ?? foundry.utils.randomID(),
+      title,
+      status,
+      source,
+      imageUrl: this.resolveAssetUrl(image),
+      progress,
+      description: this.cleanHtml(this.firstValue(
+        raw.description,
+        data.description,
+        raw.content,
+        data.content,
+        system.description,
+        system.content,
+        fql.description,
+        fql.content,
+        this.journalText(raw)
+      )),
+      playerNotes: this.cleanHtml(this.firstValue(raw.playerNotes, data.playerNotes, system.playerNotes, fql.playerNotes, raw.notes, data.notes, system.notes, fql.notes, "")),
+      objectives,
+      rewards,
+      location: this.textFromValue(this.firstValue(raw.location, data.location, system.location, fql.location, "")),
+      giver: this.normalizePerson(this.firstValue(raw.giver, data.giver, raw.questGiver, data.questGiver, system.giver, fql.giver, ""))
+    });
+  }
+
+  static normalizeForienQuestEntry(raw, source) {
+    const quest = raw.quest ?? raw.questData ?? raw;
+    const data = raw.enrich ?? quest.toJSON?.() ?? quest ?? {};
+    const status = this.normalizeStatus(data.status ?? quest.status);
+    const icon = data.questIconType === "splash-image" && data.splash ? data.splash : data.giverData?.img;
+    const objectives = this.normalizeForienTasks(data.data_tasks ?? data.tasks);
+    const rewards = this.normalizeForienRewards(data.data_rewards ?? data.rewards);
+    const progress = {
+      completed: Number(data.checkedTasks ?? objectives.filter((objective) => objective.done).length),
+      total: Number(data.totalTasks ?? objectives.length)
+    };
+
+    return this.compactObject({
+      id: data.id ?? quest.id ?? raw.id ?? raw.journalEntry?.id ?? foundry.utils.randomID(),
+      title: data.name ?? quest.name ?? "Untitled Quest",
+      status,
+      statusKey: data.status ?? quest.status ?? "",
+      source,
+      imageUrl: this.resolveAssetUrl(icon ?? ""),
+      splashUrl: this.resolveAssetUrl(data.splash ?? ""),
+      splashPosition: data.splashPos ?? "center",
+      splashAsIcon: Boolean(data.splashAsIcon),
+      progress: progress.total ? progress : {},
+      description: this.cleanHtml(data.description ?? quest.description ?? ""),
+      playerNotes: this.cleanHtml(data.playernotes ?? quest.playernotes ?? ""),
+      objectives,
+      subquests: this.normalizeForienSubquests(data.data_subquest ?? []),
+      rewards,
+      location: this.textFromValue(data.location ?? quest.location ?? ""),
+      giver: this.normalizeForienGiver(data),
+      parent: data.data_parent?.id ? {
+        id: data.data_parent.id,
+        title: data.data_parent.name,
+        status: this.normalizeStatus(data.data_parent.status)
+      } : null,
+      primary: Boolean(data.isPrimary),
+      mainQuest: Boolean(data.isPrimary),
+      badge: data.isPrimary ? "Main Quest" : "",
+      personal: Boolean(data.isPersonal),
+      hiddenForPlayers: Boolean(data.isHidden)
+    });
+  }
+
+  static normalizeForienGiver(data) {
+    if (!data.giverData) {
+      return this.compactObject({
+        id: "",
+        uuid: data.giver ?? "",
+        name: data.giver === "abstract" ? data.giverName ?? "" : "",
+        imageUrl: this.resolveAssetUrl(data.image ?? "")
+      });
+    }
+
+    return this.compactObject({
+      id: "",
+      uuid: data.giverData.uuid ?? data.giver ?? "",
+      name: data.giverData.name ?? data.giverName ?? "",
+      imageUrl: this.resolveAssetUrl(data.giverData.img ?? ""),
+      hasTokenImg: Boolean(data.giverData.hasTokenImg)
+    });
+  }
+
+  static normalizeForienTasks(tasks = []) {
+    return tasks.map((task) => this.compactObject({
+      id: task.uuidv4 ?? "",
+      label: this.cleanHtml(task.name ?? ""),
+      done: Boolean(task.completed),
+      failed: Boolean(task.failed),
+      hidden: Boolean(task.hidden),
+      state: task.state ?? (task.completed ? "check-square" : task.failed ? "minus-square" : "")
+    })).filter((task) => task.label);
+  }
+
+  static normalizeForienSubquests(subquests = []) {
+    return subquests.map((subquest) => this.compactObject({
+      id: subquest.id ?? "",
+      title: subquest.name ?? "",
+      status: this.normalizeStatus(subquest.status),
+      statusKey: subquest.status ?? "",
+      primary: Boolean(subquest.isPrimary),
+      personal: Boolean(subquest.isPersonal),
+      hiddenForPlayers: Boolean(subquest.isHidden),
+      inactive: Boolean(subquest.isInactive)
+    })).filter((subquest) => subquest.title);
+  }
+
+  static normalizeForienRewards(rewards = []) {
+    return rewards.map((reward) => {
+      const data = reward.data ?? reward;
+      const name = reward.name ?? data.name ?? "";
+      const image = reward.img ?? data.img ?? "";
+      return this.compactObject({
+        id: reward.uuidv4 ?? data.uuid ?? "",
+        uuid: data.uuid ?? "",
+        label: this.cleanHtml(name),
+        imageUrl: this.resolveAssetUrl(image),
+        hidden: Boolean(reward.hidden),
+        locked: Boolean(reward.locked),
+        type: reward.type?.toLowerCase?.() ?? data.type?.toLowerCase?.() ?? "reward",
+        draggable: Boolean(reward.draggable),
+        isLink: Boolean(reward.isLink),
+        transfer: reward.transfer ?? null
+      });
+    }).filter((reward) => reward.label);
+  }
+
+  static normalizeStatus(value) {
+    if (typeof value === "number") {
+      return ["Available", "In Progress", "Completed", "Failed", "Inactive"][value] ?? String(value);
+    }
+
+    const raw = String(value ?? "available").trim();
+    const compact = raw.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+    if (["available"].includes(compact)) return "Available";
+    if (["active", "in progress", "inprogress", "started", "accepted"].includes(compact)) return "In Progress";
+    if (["completed", "complete", "success"].includes(compact)) return "Completed";
+    if (["failed", "failure"].includes(compact)) return "Failed";
+    if (["inactive", "hidden", "disabled"].includes(compact)) return "Inactive";
+    return QUEST_STATUS_LABELS[raw.toLowerCase()] ?? raw;
+  }
+
+  static isWebsiteStatus(status) {
+    return WEBSITE_STATUS_ORDER.includes(status);
+  }
+
+  static normalizeProgress(raw, data, objectives) {
+    const completed = objectives.filter((objective) => objective.done).length;
+    const total = objectives.length;
+    const progress = {
+      completed: Number(this.firstValue(raw.completedObjectives, data.completedObjectives, raw.progress?.completed, data.progress?.completed, completed)),
+      total: Number(this.firstValue(raw.totalObjectives, data.totalObjectives, raw.progress?.total, data.progress?.total, total))
+    };
+    return progress.total ? progress : {};
+  }
+
+  static journalText(raw) {
+    const pages = raw.pages?.contents ?? raw.pages ?? [];
+    return Array.from(pages)
+      .filter((page) => page.type === "text" || page.text?.content)
+      .map((page) => page.text?.content ?? page.data?.text?.content ?? "")
+      .join("\n");
+  }
+
+  static collectJournal() {
+    const entries = game.journal.contents
+      .filter((entry) => !this.hasForienQuestLog() || !this.getForienFlagData(entry))
+      .filter((entry) => this.isJournalVisibleToPlayers(entry))
+      .map((entry) => this.serializeJournalEntry(entry))
+      .sort(this.sortByFolderThenName);
+
+    return {
+      folders: this.buildFolderTree("JournalEntry", entries),
+      groups: this.groupByFolder(entries),
+      entries
+    };
+  }
+
+  static collectContacts() {
+    const actors = game.actors.contents
+      .filter((actor) => this.shouldPublishSidebarDocument(actor, "LIMITED"))
+      .map((actor) => {
+        const contact = this.serializeActor(actor);
+        delete contact.type;
+        return contact;
+      })
+      .sort(this.sortByFolderThenName);
+
+    return {
+      folders: this.buildFolderTree("Actor", actors),
+      groups: this.groupByFolder(actors),
+      actors
+    };
+  }
+
+  static collectItems() {
+    const worldItems = game.items.contents
+      .filter((item) => this.shouldPublishSidebarDocument(item, "LIMITED"))
+      .map((item) => ({
+        ...this.serializeItem(item),
+        holder: this.compactObject({
+          id: null,
+          name: "World Items",
+          type: "world",
+          folder: null
+        })
+      }));
+
+    const actorItems = game.actors.contents
+      .filter((actor) => actor.type === "character")
+      .filter((actor) => this.shouldPublishCharacterSheet(actor))
+      .flatMap((actor) => actor.items.contents.map((item) => ({
+        ...this.serializeEmbeddedItem(item),
+        holder: this.compactObject({
+          id: actor.id,
+          name: actor.name,
+          type: actor.type,
+          imageUrl: this.resolveAssetUrl(actor.img ?? ""),
+          folder: this.serializeFolderRef(actor.folder)
+        })
+      })));
+
+    const items = [...actorItems, ...worldItems].sort((a, b) => {
+      const holderSort = (a.holder?.name ?? "").localeCompare(b.holder?.name ?? "");
+      return holderSort || a.name.localeCompare(b.name);
+    });
+
+    return {
+      folders: this.buildFolderTree("Item", items),
+      groups: this.groupItemsByHolder(items),
+      items
+    };
+  }
+
+  static collectCharacterSheets() {
+    const actors = game.actors.contents
+      .filter((actor) => actor.type === "character")
+      .filter((actor) => this.shouldPublishCharacterSheet(actor))
+      .map((actor) => this.serializeActor(actor, { includeItems: true }))
+      .sort(this.sortByFolderThenName);
+
+    return {
+      folders: this.buildFolderTree("Actor", actors),
+      groups: this.groupByFolder(actors),
+      actors
+    };
+  }
+
+  static serializeJournalEntry(entry) {
+    const base = this.serializeDocumentBase(entry);
+    delete base.type;
+    const pages = entry.pages?.contents ?? [];
+    return this.compactObject({
+      ...base,
+      content: this.cleanHtml(entry.content ?? ""),
+      pages: pages
+        .filter((page) => this.shouldPublishJournalPage(page))
+        .map((page) => this.serializeJournalPage(page))
+    });
+  }
+
+  static serializeJournalPage(page) {
+    const text = page.text?.content ?? page.data?.text?.content ?? "";
+    const image = page.src ?? page.image?.caption ?? page.data?.src ?? "";
+    return this.compactObject({
+      id: page.id,
+      name: page.name,
+      type: page.type,
+      title: {
+        show: page.title?.show,
+        level: page.title?.level
+      },
+      text: this.cleanHtml(text),
+      srcUrl: this.resolveAssetUrl(image)
+    });
+  }
+
+  static serializeActor(actor, { includeItems = false, includeEffects = false } = {}) {
+    const base = this.serializeDocumentBase(actor);
+    if (actor.type === "character") delete base.type;
+    const system = actor.system ?? actor.data?.data ?? {};
+    return this.compactObject({
+      ...base,
+      imageUrl: this.resolveAssetUrl(actor.img ?? ""),
+      description: this.actorDescription(system),
+      summary: this.summarizeActorSystem(system),
+      items: includeItems ? actor.items.contents.map((item) => this.serializeEmbeddedItem(item)) : [],
+      effects: includeEffects ? actor.effects.contents.map((effect) => this.serializeActiveEffect(effect)) : []
+    });
+  }
+
+  static serializeItem(item) {
+    const base = this.serializeDocumentBase(item);
+    const system = item.system ?? item.data?.data ?? {};
+    return this.compactObject({
+      ...base,
+      imageUrl: this.resolveAssetUrl(item.img ?? ""),
+      description: this.cleanHtml(system.description?.value ?? system.description ?? ""),
+      summary: this.summarizeItemSystem(system)
+    });
+  }
+
+  static serializeEmbeddedItem(item) {
+    const system = item.system ?? item.data?.data ?? {};
+    return this.compactObject({
+      id: item.id,
+      name: item.name,
+      type: item.type,
+      imageUrl: this.resolveAssetUrl(item.img ?? ""),
+      description: this.cleanHtml(system.description?.value ?? system.description ?? ""),
+      summary: this.summarizeItemSystem(system)
+    });
+  }
+
+  static serializeActiveEffect(effect) {
+    return this.compactObject({
+      id: effect.id,
+      name: effect.name ?? effect.label,
+      icon: effect.icon ?? "",
+      iconUrl: this.resolveAssetUrl(effect.icon ?? ""),
+      disabled: Boolean(effect.disabled),
+      duration: this.summarizeDuration(effect.duration ?? {})
+    });
+  }
+
+  static actorDescription(system) {
+    return this.cleanHtml(
+      system.details?.biography?.public ||
+      system.details?.biography?.value ||
+      system.biography ||
+      system.description?.value ||
+      system.description ||
+      ""
+    );
+  }
+
+  static summarizeActorSystem(system) {
+    const customConfig = this.customAbilitiesSkillsConfig();
+    return this.compactObject({
+      abilities: this.summarizeAbilityMap(system.abilities, customConfig),
+      abilityDetails: this.summarizeAbilityDetails(system.abilities, customConfig),
+      skills: this.summarizeSkillMap(system.skills, customConfig),
+      skillDetails: this.summarizeSkillDetails(system.skills, customConfig),
+      attributes: this.compactObject({
+        hp: this.compactObject(system.attributes?.hp),
+        ac: this.firstValue(system.attributes?.ac?.value, system.attributes?.ac?.flat, system.attributes?.ac),
+        movement: this.compactObject(system.attributes?.movement),
+        senses: this.compactObject(system.attributes?.senses)
+      }),
+      details: this.compactObject({
+        race: this.textFromValue(system.details?.race),
+        background: this.textFromValue(system.details?.background),
+        alignment: system.details?.alignment,
+        type: this.textFromValue(system.details?.type?.value ?? system.details?.type),
+        cr: system.details?.cr,
+        level: system.details?.level,
+        xp: system.details?.xp?.value
+      }),
+      traits: this.compactObject({
+        size: system.traits?.size,
+        languages: this.listValues(system.traits?.languages),
+        damageImmunities: this.listValues(system.traits?.di),
+        damageResistances: this.listValues(system.traits?.dr),
+        damageVulnerabilities: this.listValues(system.traits?.dv),
+        conditionImmunities: this.listValues(system.traits?.ci)
+      }),
+      currency: this.compactObject(system.currency),
+      resources: this.compactObject(system.resources)
+    });
+  }
+
+  static summarizeItemSystem(system) {
+    return this.compactObject({
+      source: this.compactObject(system.source),
+      activation: this.compactObject(system.activation),
+      duration: this.compactObject(system.duration),
+      target: this.compactObject(system.target),
+      range: this.compactObject(system.range),
+      uses: this.compactObject(system.uses),
+      damage: Array.isArray(system.damage?.parts) ? system.damage.parts.map((part) => part.join(" ")) : undefined,
+      formula: system.formula,
+      save: this.compactObject(system.save),
+      type: this.compactObject(system.type),
+      requirements: system.requirements,
+      quantity: system.quantity,
+      weight: system.weight,
+      price: this.compactObject(system.price),
+      rarity: system.rarity,
+      properties: this.listValues(system.properties)
+    });
+  }
+
+  static summarizeAbilityMap(abilities, customConfig = {}) {
+    if (!abilities || typeof abilities !== "object") return {};
+    return Object.fromEntries(
+      Object.entries(abilities)
+        .filter(([key]) => !customConfig.hiddenAbilities?.[key])
+        .map(([key, value]) => [key, value?.value])
+        .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    );
+  }
+
+  static summarizeAbilityDetails(abilities, customConfig = {}) {
+    if (!abilities || typeof abilities !== "object") return [];
+    return Object.entries(abilities)
+      .filter(([key]) => !customConfig.hiddenAbilities?.[key])
+      .map(([key, value]) => this.compactObject({
+        key,
+        label: this.configLabel(customConfig.abilities, key, value, key).toUpperCase(),
+        value: value?.value,
+        mod: value?.mod,
+        save: value?.save,
+        proficient: value?.proficient
+      }))
+      .filter((ability) => ability.value !== undefined && ability.value !== null && ability.value !== "");
+  }
+
+  static summarizeSkillMap(skills, customConfig = {}) {
+    if (!skills || typeof skills !== "object") return {};
+    return Object.fromEntries(
+      Object.entries(skills)
+        .filter(([key]) => !customConfig.hiddenSkills?.[key])
+        .map(([key, value]) => [key, this.firstValue(value?.total, value?.value, value?.mod, value?.bonus)])
+        .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    );
+  }
+
+  static summarizeSkillDetails(skills, customConfig = {}) {
+    if (!skills || typeof skills !== "object") return [];
+    return Object.entries(skills)
+      .filter(([key]) => !customConfig.hiddenSkills?.[key])
+      .map(([key, value]) => this.compactObject({
+        key,
+        label: this.configLabel(customConfig.skills, key, value, key),
+        ability: value?.ability,
+        value: this.firstValue(value?.total, value?.value, value?.mod, value?.bonus),
+        mod: value?.mod,
+        total: value?.total,
+        bonus: value?.bonus,
+        proficient: value?.prof,
+        expertise: value?.expertise
+      }))
+      .filter((skill) => skill.value !== undefined && skill.value !== null && skill.value !== "");
+  }
+
+  static customAbilitiesSkillsConfig() {
+    if (!game.settings.get(MODULE_ID, EXPORT_OPTION_SETTINGS.customAbilitiesSkills)) {
+      return {
+        enabled: false,
+        active: false,
+        abilities: this.dnd5eLabels("abilities"),
+        skills: this.dnd5eLabels("skills"),
+        hiddenAbilities: {},
+        hiddenSkills: {}
+      };
+    }
+
+    const module = game.modules.get(CUSTOM_ABILITIES_SKILLS_MODULE_ID) ?? this.findCustomAbilitiesSkillsModule();
+    const settings = this.customAbilitiesSkillsSettings();
+    return {
+      enabled: true,
+      active: Boolean(module?.active),
+      module: module ? this.compactObject({
+        id: module.id,
+        title: module.title,
+        version: module.version
+      }) : null,
+      abilities: {
+        ...this.dnd5eLabels("abilities"),
+        ...this.customListLabels(settings.customAbilitiesList)
+      },
+      skills: {
+        ...this.dnd5eLabels("skills"),
+        ...this.customListLabels(settings.customSkillList)
+      },
+      hiddenAbilities: settings.hiddenAbilities ?? {},
+      hiddenSkills: settings.hiddenSkills ?? {}
+    };
+  }
+
+  static customAbilitiesSkillsSettings() {
+    try {
+      return game.settings.get(CUSTOM_ABILITIES_SKILLS_MODULE_ID, "settings") ?? {};
+    } catch {
+      return {};
+    }
+  }
+
+  static findCustomAbilitiesSkillsModule() {
+    return game.modules.contents.find((module) => {
+      if (!module.active) return false;
+      const haystack = `${module.id} ${module.title ?? ""}`.toLowerCase();
+      return CUSTOM_ABILITIES_SKILLS_PATTERNS.some((pattern) => pattern.test(haystack));
+    }) ?? null;
+  }
+
+  static dnd5eLabels(kind) {
+    const labels = game.dnd5e?.config?.[kind] ?? globalThis.CONFIG?.DND5E?.[kind] ?? {};
+    return Object.fromEntries(Object.entries(labels).map(([key, value]) => [
+      key,
+      typeof value === "string" ? value : value?.label ?? value?.name ?? key
+    ]));
+  }
+
+  static customListLabels(list = {}) {
+    return Object.fromEntries(
+      Object.entries(list)
+        .filter(([, value]) => value?.applied !== false)
+        .map(([key, value]) => [key, value?.label])
+        .filter(([, label]) => label)
+    );
+  }
+
+  static configLabel(labels = {}, key, value, fallback = key) {
+    return String(value?.label ?? labels[key] ?? labels[key?.toLowerCase?.()] ?? fallback);
+  }
+
+  static summarizeDuration(duration) {
+    return this.compactObject({
+      type: duration.type,
+      seconds: duration.seconds,
+      rounds: duration.rounds,
+      turns: duration.turns,
+      startTime: duration.startTime
+    });
+  }
+
+  static listValues(value) {
+    if (!value) return undefined;
+    if (Array.isArray(value)) return value;
+    if (Array.isArray(value.value)) return [...value.value, value.custom].filter(Boolean);
+    if (typeof value === "object") return Object.entries(value).filter(([, enabled]) => enabled).map(([key]) => key);
+    return value;
+  }
+
+  static compactObject(value) {
+    if (!value || typeof value !== "object") return value;
+    const compacted = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (entry === undefined || entry === null || entry === "" || entry === false) continue;
+      if (Array.isArray(entry) && entry.length === 0) continue;
+      if (typeof entry === "object" && !Array.isArray(entry)) {
+        const child = this.compactObject(entry);
+        if (child && Object.keys(child).length) compacted[key] = child;
+        continue;
+      }
+      compacted[key] = entry;
+    }
+    return compacted;
+  }
+
+  static serializeDocumentBase(document) {
+    return this.compactObject({
+      id: document.id,
+      name: document.name,
+      type: document.type ?? document.documentName,
+      folder: this.serializeFolderRef(document.folder)
+    });
+  }
+
+  static serializeFolderRef(folder) {
+    if (!folder) return null;
+    return this.compactObject({
+      id: folder.id,
+      name: folder.name,
+      path: this.folderPath(folder)
+    });
+  }
+
+  static buildFolderTree(documentName, documents) {
+    const visibleFolderIds = new Set(documents.map((document) => document.folder?.id).filter(Boolean));
+    const folders = game.folders.contents
+      .filter((folder) => folder.type === documentName)
+      .filter((folder) => this.folderHasVisibleDocument(folder, visibleFolderIds))
+      .map((folder) => ({
+        id: folder.id,
+        name: folder.name,
+        parent: folder.folder?.id ?? folder.parent ?? null,
+        path: this.folderPath(folder)
+      }));
+
+    return folders.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  static groupByFolder(documents) {
+    const groups = new Map();
+    for (const document of documents) {
+      const key = document.folder?.path || "Unfiled";
+      if (!groups.has(key)) {
+        groups.set(key, {
+          id: document.folder?.id ?? null,
+          name: key,
+          path: key,
+          records: []
+        });
+      }
+      groups.get(key).records.push(document);
+    }
+
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        records: group.records.sort((a, b) => a.name.localeCompare(b.name))
+      }))
+      .sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  static groupItemsByHolder(items) {
+    const groups = new Map();
+    for (const item of items) {
+      const key = item.holder?.id ?? "world";
+      if (!groups.has(key)) {
+        groups.set(key, {
+          id: item.holder?.id ?? null,
+          name: item.holder?.name ?? "World Items",
+          type: item.holder?.type ?? "world",
+          imageUrl: item.holder?.imageUrl ?? "",
+          folder: item.holder?.folder ?? null,
+          records: []
+        });
+      }
+      groups.get(key).records.push(item);
+    }
+
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        records: group.records.sort((a, b) => a.name.localeCompare(b.name))
+      }))
+      .sort((a, b) => {
+        if (a.name === "World Items") return 1;
+        if (b.name === "World Items") return -1;
+        return a.name.localeCompare(b.name);
+      });
+  }
+
+  static sortByFolderThenName(a, b) {
+    return (a.folder?.path ?? "Unfiled").localeCompare(b.folder?.path ?? "Unfiled") ||
+      a.name.localeCompare(b.name);
+  }
+
+  static folderHasVisibleDocument(folder, visibleFolderIds) {
+    let current = folder;
+    while (current) {
+      if (visibleFolderIds.has(current.id)) return true;
+      current = current.children?.find?.((child) => visibleFolderIds.has(child.id)) ?? null;
+      if (!current) break;
+    }
+
+    return visibleFolderIds.has(folder.id) || Array.from(visibleFolderIds).some((id) => {
+      const candidate = game.folders.get(id);
+      return this.folderPath(candidate).startsWith(`${this.folderPath(folder)} / `);
+    });
+  }
+
+  static folderPath(folder) {
+    if (!folder) return "";
+    const parts = [];
+    let current = folder;
+    const seen = new Set();
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id);
+      parts.unshift(current.name);
+      current = current.folder ?? game.folders.get(current.parent);
+    }
+    return parts.join(" / ");
+  }
+
+  static serializeOwnership(document) {
+    const ownership = document.ownership ?? document.permission ?? {};
+    return {
+      default: ownership.default ?? 0,
+      playerAccess: game.users.contents
+        .filter((user) => !user.isGM)
+        .map((user) => ({
+          id: user.id,
+          name: user.name,
+          level: this.permissionLevel(document, user)
+        }))
+        .filter((entry) => entry.level > 0)
+    };
+  }
+
+  static isVisibleToAnyPlayer(document, minimum = "LIMITED") {
+    const min = this.permissionConstant(minimum);
+    return game.users.contents
+      .filter((user) => !user.isGM)
+      .some((user) => this.permissionLevel(document, user) >= min);
+  }
+
+  static shouldPublishSidebarDocument(document, minimum = "LIMITED") {
+    return game.settings.get(MODULE_ID, "publishAllSidebarData") ||
+      this.isVisibleToAnyPlayer(document, minimum);
+  }
+
+  static shouldPublishJournalPage(page) {
+    const hasOwnOwnership = Boolean(page.ownership || page.permission);
+    const hasPermissionTest = typeof page.testUserPermission === "function";
+    if (!hasOwnOwnership && !hasPermissionTest) return true;
+    return this.isJournalVisibleToPlayers(page);
+  }
+
+  static isJournalVisibleToPlayers(document) {
+    const min = this.permissionConstant("LIMITED");
+    const ownership = document.ownership ?? document.permission ?? {};
+
+    if ((ownership.default ?? 0) >= min) return true;
+
+    const playerUsers = game.users.contents.filter((user) => !user.isGM);
+    return playerUsers.some((user) => {
+      const level = ownership[user.id] ?? ownership[user.role] ?? 0;
+      return level >= min;
+    });
+  }
+
+  static shouldPublishCharacterSheet(actor) {
+    return this.isOwnedByAnyPlayer(actor);
+  }
+
+  static isOwnedByAnyPlayer(document) {
+    const owner = this.permissionConstant("OWNER");
+    return game.users.contents
+      .filter((user) => !user.isGM)
+      .some((user) => this.permissionLevel(document, user) >= owner);
+  }
+
+  static permissionLevel(document, user) {
+    if (typeof document.testUserPermission === "function") {
+      const levels = CONST.DOCUMENT_OWNERSHIP_LEVELS ?? CONST.DOCUMENT_PERMISSION_LEVELS;
+      for (const level of [levels.OWNER, levels.OBSERVER, levels.LIMITED]) {
+        if (document.testUserPermission(user, level)) return level;
+      }
+      return levels.NONE ?? 0;
+    }
+
+    const ownership = document.ownership ?? document.permission ?? {};
+    return ownership[user.id] ?? ownership[user.role] ?? ownership.default ?? 0;
+  }
+
+  static permissionConstant(name) {
+    const levels = CONST.DOCUMENT_OWNERSHIP_LEVELS ?? CONST.DOCUMENT_PERMISSION_LEVELS;
+    return levels?.[name] ?? 0;
+  }
+
+  static normalizeList(value, { reward = false } = {}) {
+    if (!value) return [];
+    const list = Array.isArray(value) ? value : Object.values(value);
+    return list.map((item) => {
+      if (typeof item === "string") return { label: item };
+      const visible = item.visible ?? item.shown ?? item.show ?? !item.hidden;
+      return this.compactObject({
+        id: item.id ?? item._id ?? "",
+        label: this.textFromValue(this.firstValue(item.name, item.title, item.label, item.description, item.content, "")),
+        description: this.cleanHtml(this.firstValue(item.description, item.content, item.text, "")),
+        imageUrl: this.resolveAssetUrl(this.firstValue(item.img, item.image, item.icon, "")),
+        done: Boolean(item.done ?? item.completed ?? item.checked),
+        hidden: visible === false,
+        locked: Boolean(item.locked ?? item.lock),
+        type: reward ? "reward" : ""
+      });
+    }).filter((item) => item.label);
+  }
+
+  static normalizePerson(value) {
+    if (!value || typeof value !== "object") return this.compactObject({ name: this.textFromValue(value) });
+    return this.compactObject({
+      id: value.id ?? value._id ?? "",
+      name: this.textFromValue(this.firstValue(value.name, value.title, value.label, "")),
+      imageUrl: this.resolveAssetUrl(this.firstValue(value.img, value.image, value.icon, ""))
+    });
+  }
+
+  static resolveAssetUrl(value) {
+    if (!value) return "";
+    const src = String(value);
+    if (/^(https?:|data:|blob:)/i.test(src)) return src;
+    try {
+      return new URL(src, window.location.href).href;
+    } catch {
+      return src;
+    }
+  }
+
+  static textFromValue(value) {
+    if (!value || typeof value !== "object") return String(value ?? "");
+    return String(this.firstValue(value.name, value.title, value.label, value.text, ""));
+  }
+
+  static minimalObject(value) {
+    if (!value || typeof value !== "object") return value;
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, entry]) => ["string", "number", "boolean"].includes(typeof entry) || entry === null)
+        .slice(0, 30)
+    );
+  }
+
+  static firstValue(...values) {
+    return values.find((value) => value !== undefined && value !== null && value !== "");
+  }
+
+  static cleanHtml(value) {
+    if (!value) return "";
+    const div = document.createElement("div");
+    div.innerHTML = String(value);
+    div.querySelectorAll("script, iframe, object, embed").forEach((node) => node.remove());
+    div.querySelectorAll("*").forEach((node) => {
+      [...node.attributes].forEach((attr) => {
+        if (/^on/i.test(attr.name)) node.removeAttribute(attr.name);
+      });
+    });
+    return div.innerHTML.trim();
+  }
+
+  static groupForTemplate(quests) {
+    const grouped = this.groupByStatus(quests);
+    return WEBSITE_STATUS_ORDER
+      .filter((status) => grouped[status]?.length)
+      .map((status) => ({ status, items: grouped[status] }));
+  }
+
+  static groupByStatus(quests) {
+    return quests.reduce((groups, quest) => {
+      const status = quest.status || "Quest";
+      groups[status] ??= [];
+      groups[status].push(quest);
+      return groups;
+    }, {});
+  }
+
+  static async download() {
+    const title = game.settings.get(MODULE_ID, "worldTitle") || "FoundryCompanion";
+    const json = JSON.stringify(await this.buildExportPayload(), null, 2);
+    const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${toSlug(title)}-foundry-companion.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  static buildWebsitePayload() {
+    const exportOptions = this.getExportOptions();
+    const quests = exportOptions.questLog ? this.collectWebsiteQuests() : [];
+    const journal = exportOptions.journal ? this.collectJournal() : this.emptyFolderPayload("entries");
+    const contacts = exportOptions.contacts ? this.collectContacts() : this.emptyFolderPayload("actors");
+    const items = exportOptions.items ? this.collectItems() : this.emptyFolderPayload("items");
+    const characterSheets = exportOptions.characterSheets ? this.collectCharacterSheets() : this.emptyFolderPayload("actors");
+    const hasForienQuestLog = this.hasForienQuestLog();
+    const customAbilitiesSkills = this.customAbilitiesSkillsConfig();
+    const questLog = {
+      enabled: exportOptions.questLog && hasForienQuestLog,
+      integration: "forien-quest-log",
+      includedStatuses: WEBSITE_STATUS_ORDER,
+      quests,
+      sections: this.groupForTemplate(quests)
+    };
+    const navigation = [
+      ...(questLog.enabled ? [{ id: "questLog", label: "Quest Log", icon: "scroll" }] : []),
+      ...(exportOptions.journal ? [{ id: "journal", label: "Journal", icon: "book-open" }] : []),
+      ...(exportOptions.contacts ? [{ id: "contacts", label: "Contacts", icon: "users" }] : []),
+      ...(exportOptions.items ? [{ id: "items", label: "Items", icon: "box" }] : []),
+      ...(exportOptions.characterSheets ? [{ id: "characterSheets", label: "Character Sheet", icon: "circle-user" }] : [])
+    ];
+
+    return {
+      schemaVersion: 5,
+      module: MODULE_ID,
+      world: {
+        id: game.world.id,
+        title: game.world.title
+      },
+      title: game.settings.get(MODULE_ID, "worldTitle") || "FoundryCompanion",
+      generatedAt: new Date().toISOString(),
+      integrations: {
+        forienQuestLog: {
+          active: hasForienQuestLog,
+          moduleActive: Boolean(game.modules.get("forien-quest-log")?.active),
+          version: game.modules.get("forien-quest-log")?.version ?? null
+        },
+        customAbilitiesSkills: {
+          enabled: customAbilitiesSkills.enabled,
+          active: customAbilitiesSkills.active,
+          module: customAbilitiesSkills.module ?? null,
+          abilities: customAbilitiesSkills.abilities,
+          skills: customAbilitiesSkills.skills
+        }
+      },
+      publishMode: game.settings.get(MODULE_ID, "publishAllSidebarData") ? "all-sidebar-data" : "player-visible-sidebar-data",
+      imageMode: game.settings.get(MODULE_ID, "embedImageData") ? "embedded" : "linked",
+      exportOptions,
+      imageDataEmbedded: false,
+      navigation,
+      summary: {
+        quests: quests.length,
+        journalEntries: journal.entries.length,
+        contacts: contacts.actors.length,
+        items: items.items.length,
+        characterSheets: characterSheets.actors.length,
+        totalDocuments: quests.length + journal.entries.length + contacts.actors.length + items.items.length + characterSheets.actors.length
+      },
+      questLog,
+      journal,
+      contacts,
+      items,
+      characterSheets,
+      includedStatuses: WEBSITE_STATUS_ORDER
+    };
+  }
+
+  static getExportOptions() {
+    return {
+      questLog: game.settings.get(MODULE_ID, EXPORT_OPTION_SETTINGS.questLog),
+      customAbilitiesSkills: game.settings.get(MODULE_ID, EXPORT_OPTION_SETTINGS.customAbilitiesSkills),
+      journal: game.settings.get(MODULE_ID, EXPORT_OPTION_SETTINGS.journal),
+      contacts: game.settings.get(MODULE_ID, EXPORT_OPTION_SETTINGS.contacts),
+      items: game.settings.get(MODULE_ID, EXPORT_OPTION_SETTINGS.items),
+      characterSheets: game.settings.get(MODULE_ID, EXPORT_OPTION_SETTINGS.characterSheets),
+      embedImageData: game.settings.get(MODULE_ID, "embedImageData"),
+      publishAllSidebarData: game.settings.get(MODULE_ID, "publishAllSidebarData")
+    };
+  }
+
+  static async buildExportPayload() {
+    const payload = this.buildWebsitePayload();
+    this.prepareExportPayload(payload);
+    if (payload.exportOptions.embedImageData) {
+      payload.assets = {
+        images: await this.collectImageAssets(payload)
+      };
+      payload.imageDataEmbedded = true;
+    }
+    return payload;
+  }
+
+  static prepareExportPayload(payload) {
+    if (Array.isArray(payload.questLog?.sections)) {
+      for (const section of payload.questLog.sections) {
+        section.questIds = (section.items ?? []).map((quest) => quest.id).filter(Boolean);
+        delete section.items;
+      }
+    }
+
+    for (const section of [payload.journal, payload.contacts, payload.items, payload.characterSheets]) {
+      if (!Array.isArray(section?.groups)) continue;
+      for (const group of section.groups) {
+        group.recordIds = (group.records ?? []).map((record) => record.id).filter(Boolean);
+        delete group.records;
+      }
+    }
+  }
+
+  static async collectImageAssets(payload) {
+    const urls = Array.from(this.findImageUrls(payload));
+    const assets = {};
+    for (const url of urls) {
+      assets[url] = await this.fetchImageAsset(url);
+    }
+    return assets;
+  }
+
+  static findImageUrls(value, urls = new Set()) {
+    if (!value || typeof value !== "object") return urls;
+
+    for (const [key, entry] of Object.entries(value)) {
+      if (typeof entry === "string" && ["imageUrl", "iconUrl", "srcUrl", "splashUrl"].includes(key) && entry) {
+        urls.add(entry);
+      } else if (entry && typeof entry === "object") {
+        this.findImageUrls(entry, urls);
+      }
+    }
+
+    return urls;
+  }
+
+  static async fetchImageAsset(url) {
+    if (url.startsWith("data:")) {
+      return {
+        url,
+        dataUrl: url,
+        contentType: url.slice(5, url.indexOf(";")) || "image/*",
+        size: url.length,
+        embedded: true
+      };
+    }
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+      const blob = await response.blob();
+      return {
+        url,
+        dataUrl: await this.blobToDataUrl(blob),
+        contentType: blob.type || response.headers.get("Content-Type") || "application/octet-stream",
+        size: blob.size,
+        embedded: true
+      };
+    } catch (error) {
+      return {
+        url,
+        dataUrl: "",
+        contentType: "",
+        size: 0,
+        embedded: false,
+        error: error.message
+      };
+    }
+  }
+
+  static blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener("load", () => resolve(reader.result));
+      reader.addEventListener("error", () => reject(reader.error));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  static emptyFolderPayload(key) {
+    return {
+      folders: [],
+      [key]: []
+    };
+  }
+
+  static companionApiUrl(action) {
+    const endpoint = String(game.settings.get(MODULE_ID, "publishEndpoint") || "").trim().replace(/\/+$/, "");
+    const token = String(game.settings.get(MODULE_ID, "publishToken") || "").trim();
+
+    if (!endpoint) throw new Error("Set a FoundryCompanion Companion API base URL first.");
+    if (!token) throw new Error("Set a FoundryCompanion Companion API token first.");
+
+    return `${endpoint}/${encodeURIComponent(token)}/${action}`;
+  }
+
+  static async testConnection() {
+    if (!game.user.isGM) {
+      ui.notifications.warn("Only a GM can test FoundryCompanion website connections.");
+      return;
+    }
+
+    const response = await fetch(this.companionApiUrl("ping"));
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || data.ok === false) {
+      throw new Error(data.error || `FoundryCompanion ping failed: ${response.status}`);
+    }
+
+    ui.notifications.info(`FoundryCompanion connected to: ${data.campaign || "campaign"}.`);
+    return data;
+  }
+
+  static buildSyncPayload(payload) {
+    return {
+      actors: payload.characterSheets.actors,
+      contacts: payload.contacts.actors,
+      items: payload.items.items,
+      journal: payload.journal.entries,
+      quests: payload.questLog.quests,
+      meta: {
+        schemaVersion: payload.schemaVersion,
+        module: payload.module,
+        world: payload.world,
+        title: payload.title,
+        generatedAt: payload.generatedAt,
+        publishMode: payload.publishMode,
+        imageMode: payload.imageMode,
+        exportOptions: payload.exportOptions,
+        summary: payload.summary,
+        navigation: payload.navigation,
+        integrations: payload.integrations,
+        journalGroups: payload.journal.groups ?? [],
+        contactGroups: payload.contacts.groups ?? [],
+        itemGroups: payload.items.groups ?? [],
+        characterGroups: payload.characterSheets.groups ?? [],
+        questSections: payload.questLog.sections ?? []
+      },
+      assets: payload.assets ?? undefined
+    };
+  }
+
+  static async publishWebsiteData({ quiet = false } = {}) {
+    if (!game.user.isGM) {
+      ui.notifications.warn("Only a GM can publish FoundryCompanion website data.");
+      return;
+    }
+
+    const payload = await this.buildExportPayload();
+    const response = await fetch(this.companionApiUrl("sync"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(this.buildSyncPayload(payload))
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || `FoundryCompanion sync failed: ${response.status}`);
+    }
+
+    if (!quiet) ui.notifications.info(`FoundryCompanion synced${data.campaign ? ` to ${data.campaign}` : ""}.`);
+    return data;
+  }
+
+  static async copyDebugSample() {
+    const sources = this.collectQuestSources().map((source) => {
+      const normalized = this.normalizeSource(source);
+      return {
+        source: source.name,
+        count: normalized.length,
+        samples: normalized.slice(0, 3).map(({ raw }) => this.summarizeRawQuest(raw))
+      };
+    });
+
+    const payload = {
+      foundry: game.version,
+      system: game.system?.id,
+      systemVersion: game.system?.version,
+      forienQuestLogVersion: game.modules.get("forien-quest-log")?.version,
+      likelyQuestGlobals: this.findLikelyQuestGlobals(),
+      forienSettings: this.findForienSettings(),
+      websitePayloadPreview: this.buildWebsitePayload(),
+      user: {
+        id: game.user.id,
+        name: game.user.name,
+        role: game.user.role,
+        isGM: game.user.isGM
+      },
+      sources
+    };
+
+    const text = JSON.stringify(payload, null, 2);
+    await navigator.clipboard.writeText(text);
+    ui.notifications.info("FoundryCompanion debug sample copied to clipboard.");
+    console.log(`${MODULE_ID} debug sample`, payload);
+  }
+
+  static summarizeRawQuest(raw) {
+    if (!raw) return null;
+    const data = raw.toObject?.() ?? raw;
+    return {
+      constructor: raw.constructor?.name,
+      id: raw.id ?? raw._id ?? data.id ?? data._id,
+      name: raw.name ?? raw.title ?? data.name ?? data.title,
+      keys: Object.keys(data).slice(0, 50),
+      ownership: data.ownership ?? data.permission ?? raw.ownership ?? raw.permission,
+      flagKeys: Object.keys(data.flags ?? {}).slice(0, 50),
+      systemKeys: Object.keys(data.system ?? data.data ?? {}).slice(0, 50)
+    };
+  }
+
+  static findLikelyQuestGlobals() {
+    return Object.keys(globalThis)
+      .filter((key) => /quest|forien|fql/i.test(key))
+      .sort()
+      .slice(0, 80);
+  }
+
+  static findForienSettings() {
+    const storage = game.settings.storage?.get("world") ?? [];
+    return Array.from(storage)
+      .map((setting) => setting.key ?? setting.id ?? "")
+      .filter((key) => /forien|quest|fql/i.test(key))
+      .sort();
+  }
+
+  static renderHtml({ title, quests, exportedAt, user }) {
+    const grouped = this.groupByStatus(quests);
+    const sections = Object.entries(grouped).map(([status, items]) => this.renderSection(status, items)).join("");
+
+    return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)}</title>
+  <style>${this.exportCss()}</style>
+</head>
+<body>
+  <header class="site-header">
+    <p class="eyebrow">${escapeHtml(game.world.title)}</p>
+    <h1>${escapeHtml(title)}</h1>
+    <p class="meta">Exported for ${escapeHtml(user.name)} on ${escapeHtml(exportedAt.toLocaleString())}</p>
+  </header>
+  <main>
+    ${sections || "<p class=\"empty\">No visible quests were found for this user.</p>"}
+  </main>
+</body>
+</html>`;
+  }
+
+  static renderSection(status, quests) {
+    const questCards = quests.map((quest) => this.renderQuest(quest)).join("");
+    return `<section class="quest-section">
+      <h2>${escapeHtml(status)}</h2>
+      <div class="quest-list">${questCards}</div>
+    </section>`;
+  }
+
+  static renderQuest(quest) {
+    const details = [
+      quest.giver?.name ? `<span>Giver: ${escapeHtml(quest.giver.name)}</span>` : "",
+      quest.location ? `<span>Location: ${escapeHtml(quest.location)}</span>` : "",
+      quest.progress?.total ? `<span>${escapeHtml(quest.progress.completed)}/${escapeHtml(quest.progress.total)} objectives</span>` : "",
+      quest.source ? `<span>${escapeHtml(quest.source)}</span>` : ""
+    ].filter(Boolean).join("");
+
+    return `<article class="quest-card">
+      <header>
+        ${quest.imageUrl ? `<img class="quest-image" src="${escapeHtml(quest.imageUrl)}" alt="">` : ""}
+        <h3>${escapeHtml(quest.title)}</h3>
+        ${details ? `<p class="quest-details">${details}</p>` : ""}
+      </header>
+      ${quest.description ? `<div class="quest-description">${quest.description}</div>` : ""}
+      ${quest.playerNotes ? `<div class="quest-description">${quest.playerNotes}</div>` : ""}
+      ${this.renderList("Objectives", quest.objectives)}
+      ${this.renderSubquests(quest.subquests)}
+      ${this.renderList("Rewards", quest.rewards)}
+    </article>`;
+  }
+
+  static renderList(title, items) {
+    if (!items?.length) return "";
+    const rows = items
+      .filter((item) => item.visible !== false)
+      .map((item) => `<li class="${item.done ? "is-done" : ""}">${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="">` : ""}${item.label}</li>`)
+      .join("");
+    return `<div class="quest-sublist"><h4>${escapeHtml(title)}</h4><ul>${rows}</ul></div>`;
+  }
+
+  static renderSubquests(items = []) {
+    if (!items.length) return "";
+    const rows = items
+      .map((item) => `<li>${escapeHtml(item.title)} <span class="inline-status">${escapeHtml(item.status)}</span></li>`)
+      .join("");
+    return `<div class="quest-sublist"><h4>Subquests</h4><ul>${rows}</ul></div>`;
+  }
+
+  static exportCss() {
+    return document.querySelector("style[data-foundry-companion-export]")?.textContent ?? `
+      :root { color-scheme: light; --ink: #191716; --muted: #675f59; --line: #ded6cc; --paper: #fffaf2; --panel: #ffffff; --accent: #28666e; --warm: #a65f2b; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: var(--paper); line-height: 1.55; }
+      .site-header { padding: 28px 18px 20px; background: #f0e7d8; border-bottom: 1px solid var(--line); }
+      .site-header h1 { margin: 0; font-size: clamp(2rem, 8vw, 4.5rem); line-height: 0.95; letter-spacing: 0; }
+      .eyebrow, .meta { margin: 0 0 10px; color: var(--muted); font-size: 0.9rem; }
+      main { width: min(100%, 980px); margin: 0 auto; padding: 18px; }
+      .quest-section { margin: 0 0 28px; }
+      .quest-section h2 { margin: 0 0 12px; color: var(--accent); font-size: 1.15rem; text-transform: uppercase; letter-spacing: 0.08em; }
+      .quest-list { display: grid; gap: 12px; }
+      .quest-card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; box-shadow: 0 1px 0 rgba(25, 23, 22, 0.04); }
+      .quest-card header { display: grid; grid-template-columns: auto 1fr; gap: 0 12px; align-items: center; }
+      .quest-image { grid-row: span 2; width: 52px; height: 52px; border-radius: 8px; object-fit: cover; border: 1px solid var(--line); }
+      .quest-card h3 { margin: 0; font-size: 1.3rem; line-height: 1.2; letter-spacing: 0; }
+      .quest-details { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 8px 0 0; color: var(--muted); font-size: 0.88rem; }
+      .quest-description { margin-top: 14px; }
+      .quest-description :first-child { margin-top: 0; }
+      .quest-description :last-child { margin-bottom: 0; }
+      .quest-sublist { margin-top: 14px; }
+      .quest-sublist h4 { margin: 0 0 6px; font-size: 0.95rem; color: var(--warm); }
+      ul { margin: 0; padding-left: 1.2rem; }
+      li { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+      li img { width: 22px; height: 22px; border-radius: 4px; object-fit: cover; flex: 0 0 auto; }
+      li.is-done { color: var(--muted); text-decoration: line-through; }
+      .inline-status { color: var(--muted); font-size: 0.85em; }
+      .empty { color: var(--muted); }
+      @media (min-width: 760px) {
+        .site-header { padding: 42px max(24px, calc((100vw - 980px) / 2)) 28px; }
+        main { padding-block: 24px; }
+        .quest-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+    `;
+  }
+}
+
+function escapeHtml(value) {
+  const div = document.createElement("div");
+  div.textContent = String(value ?? "");
+  return div.innerHTML;
+}
+
+function toSlug(value) {
+  return String(value ?? "foundry-companion")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "foundry-companion";
+}

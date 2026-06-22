@@ -1,0 +1,176 @@
+# FoundryCompanion
+
+Foundry VTT module that lets the GM publish player-facing campaign data to a read-only, mobile-friendly companion website.
+
+FoundryCompanion is built for Foundry first. Forien's Quest Log is an optional integration: if the Forien module is installed and active, FoundryCompanion publishes its quest log data; if not, the standard Foundry Journal, Contacts, Items, and Character Sheet sections still publish normally.
+
+## What it does
+
+- Adds a GM-only **Configure Settings > Module Settings > FoundryCompanion** panel.
+- Opens a GM preview window that refreshes while it is open, using a client-side minute interval setting.
+- Downloads a full JSON snapshot matching the Replit publish payload.
+- Publishes structured JSON to an external website endpoint, such as a Replit app.
+- Publishes standard Foundry sidebar data for Journal, Contacts, Items, and owned player character sheets.
+- Optionally publishes Forien quest tabs when Forien's Quest Log is active: **Available**, **In Progress**, **Completed**, and **Failed**.
+- Excludes Forien **Inactive** quests.
+- Preserves Journal folder structure.
+- Includes a GM setting to publish either player-visible sidebar content only, or all standard Foundry sidebar data.
+- Includes **Configure Export Options** checkboxes for Enable Forien Quest Log Exporting, Journal, Contacts, Items, and Character Sheets.
+- Includes optional **5e - Custom Abilities & Skills** (`dnd5e-custom-skills`) support for custom ability and skill labels.
+- Image export mode can use image links for smaller payloads or image embedding for larger, portable payloads.
+- GM preview uses simple expandable folder/group dropdowns to verify exported data.
+- Contacts and character sheets are grouped by Foundry folder path.
+- Items are grouped by holder, including owned character inventories and world items.
+- Quest preview shows objectives.
+- Export schema v5 keeps only human-readable summaries, descriptions, images, folders, objectives, rewards, and readable sheet fields.
+- Exported JSON omits empty/default values, raw Foundry/Forien task objects, ownership bookkeeping, active effects, duplicate image paths, and duplicate grouped record bodies.
+- Character sheet summaries export all abilities and skills found in actor data, including custom keys such as `tec`, `cua_0`, or `cus_4`. Use `summary.abilities` / `summary.skills` for compact maps and `summary.abilityDetails` / `summary.skillDetails` for labels/modifiers.
+- When `dnd5e-custom-skills` is active and **Enable Custom Abilities & Skills Exporting** is checked, FoundryCompanion reads `customAbilitiesList`, `customSkillList`, `hiddenAbilities`, and `hiddenSkills` from that module's world setting.
+- Forien's starred primary quest is exported with `mainQuest: true` and `badge: "Main Quest"`.
+- Copies a debug sample to the clipboard so we can wire the exporter to your exact Forien data shape.
+
+## Install for local testing
+
+1. Copy this folder into Foundry's `Data/modules/foundry-companion`.
+2. Enable **FoundryCompanion** in your world.
+3. Open **Configure Settings > Module Settings > FoundryCompanion**.
+
+## Important permission note
+
+FoundryCompanion is a GM-side publisher. The Replit site is the player-facing read-only surface.
+
+Quest Log is optional and requires the Forien's Quest Log module to be active. When present, it is status-gated: Available, In Progress, Completed, and Failed quests are included; Inactive quests are excluded. GM Notes are not published by default.
+
+FoundryCompanion is designed to be run by the GM only. Players should not use the Foundry-side module; they view the Replit website in a read-only capacity.
+
+Website publishing sends standard Foundry data every time. If Forien is active, it also sends the four player-facing Forien tabs and excludes the Inactive tab. Keep sensitive information out of player-facing quest fields, especially descriptions, player notes, visible objectives, and visible rewards.
+
+Journals are always ownership-gated using the Journal ownership object. A Journal entry is exported only when `ownership.default` is Limited or higher, or when at least one non-GM player has Limited, Observer, or Owner access. GM-only ownership does not make a Journal publishable. When Foundry exposes page-level ownership, Journal pages are filtered the same way.
+
+By default, Contacts and world Items are also ownership-gated. Any document visible to at least one non-GM player at Limited permission or higher is included. Character Sheets includes only `character` actors owned by at least one non-GM player.
+
+Actor inventories are exported only for owned player characters. If an actor is not an owned player character, it can still be listed as a Contact, but its embedded items are not exported as inventory.
+
+Use **Sidebar Data Scope** to choose exactly one mode:
+
+- **Publish Owned/Limited sidebar data** exports only Journal, Contacts, and world Items visible to non-GM players at Limited or higher, plus character sheets owned by players.
+- **Publish all sidebar data** exports all standard Foundry Actor and world Item sidebar data regardless of player permissions. Journals still require Limited-or-higher player access; Character Sheets and actor inventory still require player ownership.
+
+Forien Quest Log still excludes Inactive quests in either mode.
+
+Use **Image Export Mode** to choose exactly one mode:
+
+- **Use image links** keeps payloads smaller and cheaper, but Replit must be able to load images from Foundry URLs.
+- **Use image embedding** embeds base64 image data in the payload, making it more portable but much larger.
+
+Use **Configure Export Options** in the FoundryCompanion panel to choose which sections are included in the Replit payload. Unchecked sections are omitted from navigation and exported as empty section payloads.
+
+In exported/published schema v5 payloads, folder/status groups use ID references instead of duplicating full records. Read full records from `journal.entries`, `contacts.actors`, `items.items`, `characterSheets.actors`, and `questLog.quests`; use group `recordIds` or `questIds` to reconstruct display sections.
+
+## Remote website / Replit publishing
+
+FoundryCompanion does not create a standalone public URL inside Foundry. The Foundry-side window is a GM preview and publishing panel.
+
+For a Replit site, use this flow:
+
+1. In Foundry, set **Companion API base URL** to your Replit base endpoint, such as `https://your-site.replit.app/api/foundry-companion`.
+2. Set **Companion API token** to the token from the STARPG console.
+3. Click **Test Connection**. FoundryCompanion calls `GET /api/foundry-companion/<token>/ping`.
+4. Click **Publish to website**, or enable **Auto-publish website data**. FoundryCompanion calls `POST /api/foundry-companion/<token>/sync`.
+
+Expected ping response:
+
+```json
+{ "ok": true, "campaign": "Starfall Rising", "campaignId": "uuid..." }
+```
+
+Published sync body:
+
+```json
+{
+  "actors": [],
+  "contacts": [],
+  "items": [],
+  "journal": [],
+  "quests": [],
+  "meta": {
+    "schemaVersion": 5,
+    "summary": {},
+    "navigation": [],
+    "integrations": {}
+  }
+}
+```
+
+No Authorization header is sent; the token is part of the Replit URL path.
+
+The **Export JSON snapshot** button still downloads the full local payload with:
+
+```json
+{
+  "schemaVersion": 5,
+  "module": "foundry-companion",
+  "world": {
+    "id": "your-world-id",
+    "title": "Your World"
+  },
+  "title": "FoundryCompanion",
+  "generatedAt": "2026-06-15T00:00:00.000Z",
+  "publishMode": "player-visible-sidebar-data",
+  "imageMode": "linked",
+  "exportOptions": {
+    "questLog": true,
+    "customAbilitiesSkills": true,
+    "journal": true,
+    "contacts": true,
+    "items": true,
+    "characterSheets": true,
+    "embedImageData": false
+  },
+  "imageDataEmbedded": false,
+  "navigation": [
+    { "id": "journal", "label": "Journal" },
+    { "id": "contacts", "label": "Contacts" },
+    { "id": "items", "label": "Items" },
+    { "id": "characterSheets", "label": "Character Sheet" }
+  ],
+  "summary": {
+    "quests": 0,
+    "journalEntries": 12,
+    "contacts": 20,
+    "items": 8,
+    "characterSheets": 4,
+    "totalDocuments": 49
+  },
+  "questLog": {
+    "enabled": false,
+    "integration": "forien-quest-log",
+    "includedStatuses": ["Available", "In Progress", "Completed", "Failed"],
+    "quests": [],
+    "sections": []
+  },
+  "journal": {
+    "folders": [],
+    "groups": [],
+    "entries": []
+  },
+  "contacts": {
+    "folders": [],
+    "groups": [],
+    "actors": []
+  },
+  "items": {
+    "folders": [],
+    "groups": [],
+    "items": []
+  },
+  "characterSheets": {
+    "folders": [],
+    "actors": []
+  }
+}
+```
+
+## Optional Forien integration
+
+Forien's Quest Log is a separate Foundry module. FoundryCompanion does not require it. When Forien is active, FoundryCompanion reads quests from Forien's public API at `game.modules.get("forien-quest-log").public.QuestAPI.DB`.

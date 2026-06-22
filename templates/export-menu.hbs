@@ -1,0 +1,82 @@
+<form class="foundry-companion-form">
+  <p>
+    Publish <strong>{{count}}</strong> player-facing Foundry records.
+  </p>
+  <p class="notes">
+    Choose what Foundry data is exported and how images are referenced.
+  </p>
+  <button type="button" data-action="test-connection">
+    <i class="fas fa-plug"></i>
+    Test Connection
+  </button>
+  <p class="notes">Uses the configured Companion API base URL and token to call <code>/&lt;token&gt;/ping</code>.</p>
+  <fieldset class="foundry-companion-options">
+    <legend>Sidebar Data Scope</legend>
+    <label>
+      <input type="radio" name="publish-mode" value="player-visible-sidebar-data" data-publish-mode {{#unless exportOptions.publishAllSidebarData}}checked{{/unless}}>
+      Publish Owned/Limited sidebar data
+    </label>
+    <p class="option-note">Exports only Journal, Contacts, and Items that non-GM players can see at Limited or higher, plus character sheets owned by players.</p>
+    <label>
+      <input type="radio" name="publish-mode" value="all-sidebar-data" data-publish-mode {{#if exportOptions.publishAllSidebarData}}checked{{/if}}>
+      Publish all sidebar data
+    </label>
+    <p class="option-note">Exports all Contacts and world Items. Journals still require Limited-or-higher player access; character sheets and actor inventory still require player ownership.</p>
+  </fieldset>
+  <fieldset class="foundry-companion-options">
+    <legend>Image Export Mode</legend>
+    <label>
+      <input type="radio" name="image-mode" value="linked" data-image-mode {{#unless exportOptions.embedImageData}}checked{{/unless}}>
+      Use image links
+    </label>
+    <p class="option-note">Smaller and cheaper payloads, but Replit must be able to load images from Foundry URLs.</p>
+    <label>
+      <input type="radio" name="image-mode" value="embedded" data-image-mode {{#if exportOptions.embedImageData}}checked{{/if}}>
+      Use image embedding
+    </label>
+    <p class="option-note">Embeds base64 image data in the payload. More portable, but creates large data transfers.</p>
+  </fieldset>
+  <fieldset class="foundry-companion-options">
+    <legend>Configure Export Options</legend>
+    <label>
+      <input type="checkbox" data-export-option="exportQuestLog" {{#if exportOptions.questLog}}checked{{/if}}>
+      Enable Forien Quest Log Exporting
+    </label>
+    <label>
+      <input type="checkbox" data-export-option="exportCustomAbilitiesSkills" {{#if exportOptions.customAbilitiesSkills}}checked{{/if}}>
+      Enable Custom Abilities & Skills Exporting
+    </label>
+    <label>
+      <input type="checkbox" data-export-option="exportJournal" {{#if exportOptions.journal}}checked{{/if}}>
+      Journal
+    </label>
+    <label>
+      <input type="checkbox" data-export-option="exportContacts" {{#if exportOptions.contacts}}checked{{/if}}>
+      Contacts
+    </label>
+    <label>
+      <input type="checkbox" data-export-option="exportItems" {{#if exportOptions.items}}checked{{/if}}>
+      Items
+    </label>
+    <label>
+      <input type="checkbox" data-export-option="exportCharacterSheets" {{#if exportOptions.characterSheets}}checked{{/if}}>
+      Character Sheets
+    </label>
+  </fieldset>
+  <button type="button" data-action="open">
+    <i class="fas fa-book-open"></i>
+    Open GM preview
+  </button>
+  <button type="button" data-action="export">
+    <i class="fas fa-file-export"></i>
+    Export JSON snapshot
+  </button>
+  <button type="button" data-action="publish">
+    <i class="fas fa-upload"></i>
+    Publish to website
+  </button>
+  <button type="button" data-action="debug">
+    <i class="fas fa-bug"></i>
+    Copy quest debug sample
+  </button>
+</form>

@@ -1,0 +1,193 @@
+<section class="foundry-companion-page">
+  <header class="companion-header">
+    <div>
+      <p class="eyebrow">{{worldTitle}}</p>
+      <h1>{{title}}</h1>
+      <p class="meta">{{count}} publishable records. Updated {{updatedAt}}.</p>
+      {{#if summary}}
+        <p class="meta">
+          Quests {{summary.quests}} · Journal {{summary.journalEntries}} · Contacts {{summary.contacts}} · Items {{summary.items}} · Characters {{summary.characterSheets}}
+        </p>
+      {{/if}}
+      <p class="meta">Mode: {{publishMode}} · Images: {{imageMode}}</p>
+    </div>
+    <div class="companion-actions">
+      <button type="button" data-action="refresh" title="Refresh">
+        <i class="fas fa-sync"></i>
+      </button>
+      <button type="button" data-action="export" title="Export JSON">
+        <i class="fas fa-file-export"></i>
+      </button>
+    </div>
+  </header>
+
+  <nav class="companion-nav">
+    {{#each navigation}}
+      <a href="#fc-{{id}}">{{label}}</a>
+    {{/each}}
+  </nav>
+
+  <main class="companion-sections">
+    {{#if questLog.enabled}}
+      <section id="fc-questLog" class="preview-section">
+        <h2>Quest Log</h2>
+        {{#if sections.length}}
+          {{#each sections}}
+            <section class="quest-section">
+              <h3>{{status}}</h3>
+              <div class="quest-list">
+                {{#each items}}
+                  <article class="quest-card">
+                    <header>
+                      {{#if imageUrl}}<img class="quest-image" src="{{imageUrl}}" alt="">{{/if}}
+                      <h4>{{title}}</h4>
+                      <p class="quest-details">
+                        {{#if mainQuest}}<span>Main Quest</span>{{/if}}
+                        {{#if giver.name}}<span>Giver: {{giver.name}}</span>{{/if}}
+                        {{#if location}}<span>Location: {{location}}</span>{{/if}}
+                        {{#if progress.total}}<span>{{progress.completed}}/{{progress.total}} objectives</span>{{/if}}
+                      </p>
+                    </header>
+                    {{#if description}}<div class="quest-description">{{{description}}}</div>{{/if}}
+                    {{#if objectives.length}}
+                      <div class="quest-sublist">
+                        <h5>Objectives</h5>
+                        <ul>
+                          {{#each objectives}}
+                            {{#unless hidden}}
+                              <li class="{{#if done}}is-done{{/if}}">{{{label}}}</li>
+                            {{/unless}}
+                          {{/each}}
+                        </ul>
+                      </div>
+                    {{/if}}
+                  </article>
+                {{/each}}
+              </div>
+            </section>
+          {{/each}}
+        {{else}}
+          <p class="empty-inline">No publishable Forien quests found.</p>
+        {{/if}}
+      </section>
+    {{/if}}
+
+    {{#if exportOptions.journal}}
+      <section id="fc-journal" class="preview-section">
+        <h2>Journal</h2>
+        {{#if journal.entries.length}}
+          <div class="folder-list">
+            {{#each journal.groups}}
+              <details class="folder-group" open>
+                <summary>{{path}} <span>{{records.length}}</span></summary>
+                <div class="record-list">
+                  {{#each records}}
+                    <details class="record-row">
+                      <summary>{{name}} <span>{{pages.length}} pages</span></summary>
+                      {{#if content}}<div class="record-content">{{{content}}}</div>{{/if}}
+                      {{#if pages.length}}
+                        <ul>
+                          {{#each pages}}
+                            <li>{{name}} <span class="inline-status">{{type}}</span></li>
+                          {{/each}}
+                        </ul>
+                      {{/if}}
+                    </details>
+                  {{/each}}
+                </div>
+              </details>
+            {{/each}}
+          </div>
+        {{else}}
+          <p class="empty-inline">No publishable journal entries found.</p>
+        {{/if}}
+      </section>
+    {{/if}}
+
+    {{#if exportOptions.contacts}}
+      <section id="fc-contacts" class="preview-section">
+        <h2>Contacts</h2>
+        {{#if contacts.actors.length}}
+          <div class="folder-list">
+            {{#each contacts.groups}}
+              <details class="folder-group" open>
+                <summary>{{path}} <span>{{records.length}}</span></summary>
+                <div class="record-grid">
+                  {{#each records}}
+                    <article class="record-card">
+                      {{#if imageUrl}}<img src="{{imageUrl}}" alt="">{{/if}}
+                      <div>
+                        <h3>{{name}}</h3>
+                      </div>
+                    </article>
+                  {{/each}}
+                </div>
+              </details>
+            {{/each}}
+          </div>
+        {{else}}
+          <p class="empty-inline">No publishable contacts found.</p>
+        {{/if}}
+      </section>
+    {{/if}}
+
+    {{#if exportOptions.items}}
+      <section id="fc-items" class="preview-section">
+        <h2>Items</h2>
+        {{#if items.items.length}}
+          <div class="folder-list">
+            {{#each items.groups}}
+              <details class="folder-group" open>
+                <summary>
+                  {{#if imageUrl}}<img src="{{imageUrl}}" alt="">{{/if}}
+                  {{name}} <span>{{records.length}}</span>
+                </summary>
+                <div class="record-grid">
+                  {{#each records}}
+                    <article class="record-card">
+                      {{#if imageUrl}}<img src="{{imageUrl}}" alt="">{{/if}}
+                      <div>
+                        <h3>{{name}}</h3>
+                        <p>{{type}}</p>
+                      </div>
+                    </article>
+                  {{/each}}
+                </div>
+              </details>
+            {{/each}}
+          </div>
+        {{else}}
+          <p class="empty-inline">No publishable items found.</p>
+        {{/if}}
+      </section>
+    {{/if}}
+
+    {{#if exportOptions.characterSheets}}
+      <section id="fc-characterSheets" class="preview-section">
+        <h2>Character Sheets</h2>
+        {{#if characterSheets.actors.length}}
+          <div class="folder-list">
+            {{#each characterSheets.groups}}
+              <details class="folder-group" open>
+                <summary>{{path}} <span>{{records.length}}</span></summary>
+                <div class="record-grid">
+                  {{#each records}}
+                    <article class="record-card">
+                      {{#if imageUrl}}<img src="{{imageUrl}}" alt="">{{/if}}
+                      <div>
+                        <h3>{{name}}</h3>
+                        <p>{{items.length}} embedded items</p>
+                      </div>
+                    </article>
+                  {{/each}}
+                </div>
+              </details>
+            {{/each}}
+          </div>
+        {{else}}
+          <p class="empty-inline">No publishable character sheets found.</p>
+        {{/if}}
+      </section>
+    {{/if}}
+  </main>
+</section>

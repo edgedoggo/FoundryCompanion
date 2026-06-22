@@ -1,0 +1,392 @@
+.foundry-companion-form {
+  display: grid;
+  gap: 12px;
+}
+
+.foundry-companion-form p {
+  margin: 0;
+}
+
+.foundry-companion-form .notes {
+  color: var(--color-text-light-6);
+}
+
+.foundry-companion-form button {
+  justify-self: start;
+}
+
+.foundry-companion-options {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--color-border-light-tertiary);
+  border-radius: 6px;
+}
+
+.foundry-companion-options legend {
+  font-weight: 700;
+}
+
+.foundry-companion-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.foundry-companion-options .option-note {
+  margin: -2px 0 6px 28px;
+  color: var(--color-text-light-6);
+  font-size: 0.9rem;
+}
+
+.foundry-companion-window .window-content {
+  padding: 0;
+  background: #fffaf2;
+}
+
+.foundry-companion-page {
+  min-height: 100%;
+  color: #191716;
+  background: #fffaf2;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.foundry-companion-page .companion-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 24px 18px 18px;
+  background: #f0e7d8;
+  border-bottom: 1px solid #ded6cc;
+}
+
+.foundry-companion-page h1 {
+  margin: 0;
+  color: #191716;
+  font-size: 2.3rem;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.foundry-companion-page .eyebrow,
+.foundry-companion-page .meta {
+  margin: 0 0 8px;
+  color: #675f59;
+  font-size: 0.9rem;
+}
+
+.foundry-companion-page .companion-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.foundry-companion-page .companion-actions button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+.foundry-companion-page .companion-nav {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 18px;
+  background: #fffaf2;
+  border-bottom: 1px solid #ded6cc;
+}
+
+.foundry-companion-page .companion-nav a {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  color: #28666e;
+  background: #ffffff;
+  border: 1px solid #ded6cc;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.foundry-companion-page .companion-sections,
+.foundry-companion-page .empty {
+  width: min(100%, 980px);
+  margin: 0 auto;
+  padding: 18px;
+}
+
+.foundry-companion-page .quest-section {
+  margin: 0 0 28px;
+}
+
+.foundry-companion-page .preview-section {
+  margin: 0 0 28px;
+  scroll-margin-top: 58px;
+}
+
+.foundry-companion-page .preview-section > h2 {
+  margin: 0 0 12px;
+  color: #28666e;
+  font-size: 1.15rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.foundry-companion-page .quest-section h2 {
+  margin: 0 0 12px;
+  color: #28666e;
+  font-size: 1.05rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.foundry-companion-page .quest-section h3 {
+  margin: 0 0 12px;
+  color: #a65f2b;
+  font-size: 1rem;
+}
+
+.foundry-companion-page .quest-list {
+  display: grid;
+  gap: 12px;
+}
+
+.foundry-companion-page .quest-card {
+  background: #ffffff;
+  border: 1px solid #ded6cc;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 0 rgba(25, 23, 22, 0.04);
+}
+
+.foundry-companion-page .quest-card h3,
+.foundry-companion-page .quest-card h4 {
+  margin: 0;
+  color: #191716;
+  font-size: 1.25rem;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.foundry-companion-page .record-list,
+.foundry-companion-page .record-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.foundry-companion-page .folder-list {
+  display: grid;
+  gap: 12px;
+}
+
+.foundry-companion-page .folder-group {
+  background: #ffffff;
+  border: 1px solid #ded6cc;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.foundry-companion-page .folder-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #28666e;
+  font-weight: 800;
+}
+
+.foundry-companion-page .folder-group > summary span {
+  color: #675f59;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.foundry-companion-page .folder-group > summary img {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid #ded6cc;
+}
+
+.foundry-companion-page .folder-group .record-list,
+.foundry-companion-page .folder-group .record-grid {
+  margin-top: 10px;
+}
+
+.foundry-companion-page .record-row,
+.foundry-companion-page .record-card {
+  background: #ffffff;
+  border: 1px solid #ded6cc;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.foundry-companion-page .record-row summary {
+  cursor: pointer;
+  color: #191716;
+  font-weight: 700;
+}
+
+.foundry-companion-page .record-row summary span {
+  color: #675f59;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.foundry-companion-page .record-content {
+  margin-top: 8px;
+  color: #191716;
+  line-height: 1.5;
+}
+
+.foundry-companion-page .record-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.foundry-companion-page .record-card img {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid #ded6cc;
+}
+
+.foundry-companion-page .record-row h3,
+.foundry-companion-page .record-card h3 {
+  margin: 0;
+  color: #191716;
+  font-size: 1rem;
+}
+
+.foundry-companion-page .record-row p,
+.foundry-companion-page .record-card p,
+.foundry-companion-page .empty-inline {
+  margin: 4px 0 0;
+  color: #675f59;
+  font-size: 0.88rem;
+}
+
+.foundry-companion-page .quest-card header {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 12px;
+  align-items: center;
+}
+
+.foundry-companion-page .quest-image {
+  grid-row: span 2;
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid #ded6cc;
+}
+
+.foundry-companion-page .quest-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  min-height: 0;
+  margin: 8px 0 0;
+  color: #675f59;
+  font-size: 0.88rem;
+}
+
+.foundry-companion-page .quest-description {
+  margin-top: 14px;
+  color: #191716;
+  line-height: 1.55;
+}
+
+.foundry-companion-page .player-notes {
+  padding-top: 12px;
+  border-top: 1px solid #ded6cc;
+}
+
+.foundry-companion-page .quest-description :first-child {
+  margin-top: 0;
+}
+
+.foundry-companion-page .quest-description :last-child {
+  margin-bottom: 0;
+}
+
+.foundry-companion-page .quest-sublist {
+  margin-top: 14px;
+}
+
+.foundry-companion-page .quest-sublist h4 {
+  margin: 0 0 6px;
+  color: #a65f2b;
+  font-size: 0.95rem;
+}
+
+.foundry-companion-page ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.foundry-companion-page li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.foundry-companion-page li img {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.foundry-companion-page li.is-done {
+  color: #675f59;
+  text-decoration: line-through;
+}
+
+.foundry-companion-page .inline-status {
+  color: #675f59;
+  font-size: 0.85em;
+}
+
+@media (min-width: 760px) {
+  .foundry-companion-page .companion-header {
+    padding: 32px 24px 22px;
+  }
+
+  .foundry-companion-page h1 {
+    font-size: 3.4rem;
+  }
+
+  .foundry-companion-page .companion-sections {
+    padding-block: 24px;
+  }
+
+  .foundry-companion-page .quest-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .foundry-companion-page .record-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .foundry-companion-page .companion-header {
+    display: grid;
+  }
+
+  .foundry-companion-page h1 {
+    font-size: 2rem;
+  }
+}

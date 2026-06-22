@@ -1,0 +1,35 @@
+name: Release Latest
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build module zip
+        run: |
+          mkdir -p dist
+          cp module.json dist/module.json
+          zip -r dist/foundry-companion.zip module.json scripts styles templates README.md
+
+      - name: Publish latest release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest dist/module.json dist/foundry-companion.zip --clobber
+          else
+            gh release create latest dist/module.json dist/foundry-companion.zip \
+              --title "Latest FoundryCompanion" \
+              --notes "Latest FoundryCompanion module build."
+          fi
