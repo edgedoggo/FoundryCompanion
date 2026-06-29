@@ -21,7 +21,7 @@ FoundryCompanion is built for Foundry first. Forien's Quest Log is an optional i
 - Lets the GM choose one Journal Entry as the **Game Session Story** source; each page exports directly as an individual rich-text chapter/session with image references.
 - Game Session Story supports a Chapter/Session label setting, continuous downward reading, and bookmark/return metadata for the companion website.
 - Image export mode can use image links for smaller payloads or image embedding for larger, portable payloads.
-- Linked image exports default to full external URLs. Core Foundry paths such as `icons/...` use the configured core image base URL, which defaults to `https://assets.forge-vtt.com/bazaar/core/`.
+- Linked image exports resolve relative Foundry paths against the current Foundry server origin before the payload leaves Foundry.
 - GM preview uses simple expandable folder/group dropdowns to verify exported data.
 - Contacts and character sheets are grouped by Foundry folder path.
 - Foundry `group` actors in Contacts export as lightweight contact groups: name, image, description, and member names only.
@@ -71,18 +71,18 @@ Forien Quest Log still excludes Inactive quests in either mode.
 
 Use **Image Export Mode** to choose exactly one mode:
 
-- **Use image links** keeps payloads smaller, but the companion website must be able to load images from Foundry URLs.
+- **Use image links** keeps payloads smaller. Relative image paths are sent as full Foundry URLs using `window.location.origin`.
 - **Use image embedding** embeds base64 image data in the payload, making it more portable but much larger.
 
-When **Use full links for relative images** is checked, FoundryCompanion rewrites relative image fields and rich-text `<img src>` paths before publishing:
+When image links are used, FoundryCompanion rewrites relative image fields and rich-text `<img src>` paths before publishing:
 
 - Existing `https:`, `http:`, `data:`, and `blob:` URLs are left unchanged.
-- Core Foundry asset paths such as `icons/svg/mystery-man.svg` become `https://assets.forge-vtt.com/bazaar/core/icons/svg/mystery-man.svg` by default.
-- Other relative paths, such as world/module/system images, become full Foundry URLs using Foundry's route helper when available.
+- Relative paths such as `systems/sfrpg/icons/equipment/armor/light-armor.webp`, `worlds/my-world/art/npc-portrait.png`, or `icons/svg/mystery-man.svg` become `https://your-foundry-host/path/to/image`.
+- The companion website should use the image URLs as sent; it should not try to reconstruct Foundry-relative paths itself.
 
 Use **Configure Export Options** in the FoundryCompanion panel to choose which sections are included in the companion website payload. Unchecked sections are omitted from navigation and exported as empty section payloads.
 
-TradeHub Markets export is read-only. FoundryCompanion publishes TradeHub Capital, current location, and owned party ships with modules/HP/cargo metadata, cargo items, crew, and passengers. Cargo items are vehicle `consumable` and `loot` items, not installed equipment modules. It does not publish live markets, buy/sell goods, shipyard inventory, predictive rumours, transaction history, or repair/action controls.
+TradeHub Markets export is read-only. FoundryCompanion publishes TradeHub Capital, current location, and owned party ships with modules/HP/cargo metadata, cargo items, crew, and passengers. Cargo items are vehicle `consumable` and `loot` items, not installed equipment modules. Cargo usage is derived from exported `cargoItems[].totalWeight`, not from TradeHub's precomputed `cargoStats.current`, so the companion website receives reliable `cargo.current`, `cargo.remaining`, and `cargo.pct` values. It does not publish live markets, buy/sell goods, shipyard inventory, predictive rumours, transaction history, or repair/action controls.
 
 In exported/published schema v8 payloads, folder/status groups use ID references instead of duplicating full records. Read full records from `journal.entries`, `contacts.actors`, `items.items`, `characterSheets.actors`, `questLog.quests`, `gameSessionStory.chapters`, and `tradeHub.ships`; use group `recordIds` or `questIds` to reconstruct display sections.
 
@@ -239,10 +239,6 @@ The **Export JSON snapshot** button still downloads the full local payload with:
   "generatedAt": "2026-06-15T00:00:00.000Z",
   "publishMode": "player-visible-sidebar-data",
   "imageMode": "linked",
-  "imageLinkOptions": {
-    "absoluteImageLinks": true,
-    "coreImageBaseUrl": "https://assets.forge-vtt.com/bazaar/core/"
-  },
   "exportOptions": {
     "questLog": true,
     "customAbilitiesSkills": true,
@@ -253,9 +249,7 @@ The **Export JSON snapshot** button still downloads the full local payload with:
     "contacts": true,
     "items": true,
     "characterSheets": true,
-    "embedImageData": false,
-    "absoluteImageLinks": true,
-    "coreImageBaseUrl": "https://assets.forge-vtt.com/bazaar/core/"
+    "embedImageData": false
   },
   "imageDataEmbedded": false,
   "navigation": [
@@ -331,6 +325,7 @@ The **Export JSON snapshot** button still downloads the full local payload with:
           "current": 1200,
           "max": 4000,
           "remaining": 2800,
+          "pct": 30,
           "capacityTons": 2
         },
         "meta": {

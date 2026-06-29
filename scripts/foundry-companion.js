@@ -1,7 +1,6 @@
 const MODULE_ID = "foundry-companion";
 const MIN_PERMISSION = "LIMITED";
 const CONNECTION_KEY_PREFIX = "fc1_";
-const DEFAULT_CORE_IMAGE_BASE_URL = "https://assets.forge-vtt.com/bazaar/core/";
 
 const QUEST_STATUS_LABELS = {
   active: "In Progress",
@@ -154,26 +153,6 @@ Hooks.once("init", () => {
     restricted: true,
     type: Boolean,
     default: false
-  });
-
-  game.settings.register(MODULE_ID, "absoluteImageLinks", {
-    name: "Use full links for relative images",
-    hint: "When image links are used, convert relative Foundry image paths into full external URLs before publishing.",
-    scope: "world",
-    config: false,
-    restricted: true,
-    type: Boolean,
-    default: true
-  });
-
-  game.settings.register(MODULE_ID, "coreImageBaseUrl", {
-    name: "Core image base URL",
-    hint: "Base URL used for Foundry core assets such as icons/... when publishing linked images.",
-    scope: "world",
-    config: false,
-    restricted: true,
-    type: String,
-    default: DEFAULT_CORE_IMAGE_BASE_URL
   });
 
   game.settings.register(MODULE_ID, EXPORT_OPTION_SETTINGS.questLog, {
@@ -342,8 +321,6 @@ class FoundryCompanionMenu extends FormApplication {
       exportOptions: payload.exportOptions,
       publishMode: payload.publishMode,
       imageMode: payload.imageMode,
-      absoluteImageLinks: game.settings.get(MODULE_ID, "absoluteImageLinks"),
-      coreImageBaseUrl: game.settings.get(MODULE_ID, "coreImageBaseUrl"),
       refreshMinutes: Math.max(1, Number(game.settings.get(MODULE_ID, "refreshSeconds") || 1)),
       storyLabelOptions: FoundryCompanion.storyLabelOptions(),
       storyJournalOptions: FoundryCompanion.storyJournalOptions()
@@ -387,16 +364,6 @@ class FoundryCompanionMenu extends FormApplication {
     });
     html.find("[data-image-mode]").on("change", async (event) => {
       await game.settings.set(MODULE_ID, "embedImageData", event.currentTarget.value === "embedded");
-      this.render(false);
-      FoundryCompanion.refreshOpenApps();
-    });
-    html.find("[data-absolute-image-links]").on("change", async (event) => {
-      await game.settings.set(MODULE_ID, "absoluteImageLinks", event.currentTarget.checked);
-      this.render(false);
-      FoundryCompanion.refreshOpenApps();
-    });
-    html.find("[data-core-image-base-url]").on("change", async (event) => {
-      await game.settings.set(MODULE_ID, "coreImageBaseUrl", event.currentTarget.value.trim() || DEFAULT_CORE_IMAGE_BASE_URL);
       this.render(false);
       FoundryCompanion.refreshOpenApps();
     });
@@ -1135,7 +1102,7 @@ class FoundryCompanion {
       .filter((item) => ["consumable", "loot"].includes(item.type))
       .map((item) => this.serializeTradeHubCargoItem(item))
       .sort((a, b) => a.name.localeCompare(b.name));
-    const cargo = this.tradeHubCargoStats(source, system);
+    const cargo = this.tradeHubCargoStats(source, system, cargoItems);
     const hp = this.tradeHubHp(system.attributes?.hp);
     const shieldHp = modules
       .filter((module) => /shield/i.test(module.name))
@@ -1238,17 +1205,19 @@ class FoundryCompanion {
     });
   }
 
-  static tradeHubCargoStats(ship, system = {}) {
+  static tradeHubCargoStats(ship, system = {}, cargoItems = []) {
     const stats = ship.cargoStats ?? {};
     const baseMax = Number(system.attributes?.capacity?.cargo || 0) * 2000;
-    const max = Number(this.firstValue(stats.max, baseMax, 0));
-    const current = Number(this.firstValue(stats.current, 0));
-    const remaining = Number(this.firstValue(stats.remaining, max ? max - current : 0));
+    const statMax = Number(stats.max ?? 0);
+    const max = statMax > 0 ? statMax : baseMax;
+    const itemWeight = cargoItems.reduce((total, item) => total + Number(item.totalWeight ?? 0), 0);
+    const current = cargoItems.length ? itemWeight : Number(this.firstValue(stats.current, 0));
+    const remaining = max ? max - current : 0;
     return this.compactObject({
       current,
       max,
       remaining,
-      pct: Number(this.firstValue(stats.pct, max ? Math.min((current / max) * 100, 100) : 0)),
+      pct: max ? Math.round((current / max) * 100) : 0,
       capacityTons: Number(this.firstValue(system.cargo?.capacity, system.attributes?.capacity?.cargo, 0))
     });
   }
@@ -2071,25 +2040,11 @@ class FoundryCompanion {
     if (!value) return "";
     const src = String(value).trim();
     if (/^(https?:|data:|blob:)/i.test(src)) return src;
-    if (!game.settings.get(MODULE_ID, "absoluteImageLinks")) return src;
-    if (this.isCoreAssetPath(src)) return this.joinUrl(game.settings.get(MODULE_ID, "coreImageBaseUrl") || DEFAULT_CORE_IMAGE_BASE_URL, src.replace(/^\/+/, ""));
     try {
-      const routed = foundry.utils?.getRoute?.(src) ?? src;
-      return new URL(routed, window.location.origin).href;
+      return new URL(src.replace(/^\/+/, ""), `${window.location.origin}/`).href;
     } catch {
       return src;
     }
-  }
-
-  static isCoreAssetPath(value) {
-    const src = String(value ?? "").replace(/^\/+/, "");
-    return /^(icons|ui|fonts|textures|video)\//i.test(src);
-  }
-
-  static joinUrl(base, path) {
-    const normalizedBase = String(base || DEFAULT_CORE_IMAGE_BASE_URL).replace(/\/+$/, "");
-    const normalizedPath = String(path || "").replace(/^\/+/, "");
-    return `${normalizedBase}/${normalizedPath}`;
   }
 
   static textFromValue(value) {
@@ -2266,10 +2221,6 @@ class FoundryCompanion {
       publishMode: game.settings.get(MODULE_ID, "publishAllSidebarData") ? "all-sidebar-data" : "player-visible-sidebar-data",
       imageMode: game.settings.get(MODULE_ID, "embedImageData") ? "embedded" : "linked",
       exportOptions,
-      imageLinkOptions: this.compactObject({
-        absoluteImageLinks: game.settings.get(MODULE_ID, "absoluteImageLinks"),
-        coreImageBaseUrl: game.settings.get(MODULE_ID, "coreImageBaseUrl") || DEFAULT_CORE_IMAGE_BASE_URL
-      }),
       imageDataEmbedded: false,
       navigation,
       summary: {
@@ -2305,8 +2256,6 @@ class FoundryCompanion {
       items: game.settings.get(MODULE_ID, EXPORT_OPTION_SETTINGS.items),
       characterSheets: game.settings.get(MODULE_ID, EXPORT_OPTION_SETTINGS.characterSheets),
       embedImageData: game.settings.get(MODULE_ID, "embedImageData"),
-      absoluteImageLinks: game.settings.get(MODULE_ID, "absoluteImageLinks"),
-      coreImageBaseUrl: game.settings.get(MODULE_ID, "coreImageBaseUrl") || DEFAULT_CORE_IMAGE_BASE_URL,
       publishAllSidebarData: game.settings.get(MODULE_ID, "publishAllSidebarData")
     };
   }
