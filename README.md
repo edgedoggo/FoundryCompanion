@@ -95,12 +95,18 @@ Owned character sheet records may include:
   "name": "Rubi Conundrum",
   "color": "#33aaff",
   "playerOwners": [
-    { "id": "foundry-user-id", "name": "Player Name", "color": "#33aaff", "active": true }
+    { "id": "foundry-user-id", "name": "Player Name", "color": "#33aaff", "active": true, "assigned": true, "owner": true }
+  ],
+  "assignedPlayers": [
+    { "id": "foundry-user-id", "name": "Player Name", "color": "#33aaff", "active": true, "assigned": true, "owner": true }
+  ],
+  "permissionOwners": [
+    { "id": "other-user-id", "name": "Other Player", "color": "#e67a00", "active": true, "owner": true }
   ]
 }
 ```
 
-Use `character.color` as the primary player tag color. If it is missing, fall back to the first `character.playerOwners[].color`.
+Use `character.color` as the primary player tag color. If it is missing, fall back to the first `character.playerOwners[].color`. `playerOwners` prefers the Foundry users who have this actor selected as their assigned character; if none are assigned, it falls back to non-GM users with OWNER permission. `permissionOwners` preserves the broader non-GM OWNER permission list for worlds where every player can open every player character.
 
 Owned character sheet records also include `playerCharacter`:
 
@@ -249,7 +255,8 @@ The **Export JSON snapshot** button still downloads the full local payload with:
     "contacts": true,
     "items": true,
     "characterSheets": true,
-    "embedImageData": false
+    "embedImageData": false,
+    "publicCoreIconLinks": true
   },
   "imageDataEmbedded": false,
   "navigation": [
@@ -396,6 +403,8 @@ The **Export JSON snapshot** button still downloads the full local payload with:
   }
 }
 ```
+
+When **Automatically use public Forge links for Core Data icons** is enabled, relative Core Data icon paths such as `icons/consumables/food/spice-anise-pod.webp` are exported as `https://assets.forge-vtt.com/bazaar/core/icons/consumables/food/spice-anise-pod.webp`. Full URLs and non-Core relative paths continue to use the normal Foundry origin resolution.
 
 ## Optional Forien integration
 

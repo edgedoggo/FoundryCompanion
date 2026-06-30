@@ -1,6 +1,7 @@
 const MODULE_ID = "foundry-companion";
 const MIN_PERMISSION = "LIMITED";
 const CONNECTION_KEY_PREFIX = "fc1_";
+const FORGE_CORE_BAZAAR_ROOT = "https://assets.forge-vtt.com/bazaar/core/";
 
 const QUEST_STATUS_LABELS = {
   active: "In Progress",
@@ -153,6 +154,16 @@ Hooks.once("init", () => {
     restricted: true,
     type: Boolean,
     default: false
+  });
+
+  game.settings.register(MODULE_ID, "publicCoreIconLinks", {
+    name: "Automatically use public Forge links for Core Data icons",
+    hint: "When enabled, relative Core Data icon paths like icons/consumables/food/spice-anise-pod.webp are exported through the public Forge Bazaar core URL so companion sites can load them outside Foundry.",
+    scope: "world",
+    config: false,
+    restricted: true,
+    type: Boolean,
+    default: true
   });
 
   game.settings.register(MODULE_ID, EXPORT_OPTION_SETTINGS.questLog, {
@@ -1308,10 +1319,14 @@ class FoundryCompanion {
     if (isCharacter) delete base.type;
     const system = actor.system ?? actor.data?.data ?? {};
     const playerOwners = isCharacter ? this.actorPlayerOwners(actor) : [];
+    const assignedPlayers = isCharacter ? this.actorAssignedPlayers(actor) : [];
+    const permissionOwners = isCharacter ? this.actorPermissionOwners(actor) : [];
     return this.compactObject({
       ...base,
       color: isCharacter ? this.actorDisplayColor(actor, playerOwners) : "",
       playerOwners,
+      assignedPlayers,
+      permissionOwners,
       imageUrl: this.resolveAssetUrl(actor.img ?? ""),
       description: this.actorDescription(system),
       summary: this.summarizeActorSystem(system),
@@ -1972,17 +1987,53 @@ class FoundryCompanion {
   }
 
   static actorPlayerOwners(actor) {
+    const assignedPlayers = this.actorAssignedPlayers(actor);
+    if (assignedPlayers.length) return assignedPlayers;
+    return this.actorPermissionOwners(actor);
+  }
+
+  static actorAssignedPlayers(actor) {
+    const owner = this.permissionConstant("OWNER");
+    return game.users.contents
+      .filter((user) => !user.isGM)
+      .filter((user) => this.userAssignedActorId(user) === actor.id)
+      .map((user) => this.serializePlayerUser(user, {
+        assigned: true,
+        owner: this.permissionLevel(actor, user) >= owner
+      }))
+      .filter((ownerUser) => ownerUser && Object.keys(ownerUser).length);
+  }
+
+  static actorPermissionOwners(actor) {
     const owner = this.permissionConstant("OWNER");
     return game.users.contents
       .filter((user) => !user.isGM)
       .filter((user) => this.permissionLevel(actor, user) >= owner)
-      .map((user) => this.compactObject({
-        id: user.id,
-        name: user.name,
-        color: this.normalizeColor(this.firstValue(user.color, user.data?.color, user._source?.color, "")),
-        active: Boolean(user.active)
-      }))
+      .map((user) => this.serializePlayerUser(user, { owner: true }))
       .filter((ownerUser) => ownerUser && Object.keys(ownerUser).length);
+  }
+
+  static serializePlayerUser(user, extra = {}) {
+    return this.compactObject({
+      id: user.id,
+      name: user.name,
+      color: this.normalizeColor(this.firstValue(user.color, user.data?.color, user._source?.color, "")),
+      active: Boolean(user.active),
+      ...extra
+    });
+  }
+
+  static userAssignedActorId(user) {
+    const character = this.firstValue(
+      user.character,
+      user.data?.character,
+      user._source?.character,
+      user.flags?.core?.character,
+      ""
+    );
+    if (!character) return "";
+    if (typeof character === "string") return character;
+    return character.id ?? character._id ?? "";
   }
 
   static actorDisplayColor(actor, playerOwners = []) {
@@ -2040,6 +2091,9 @@ class FoundryCompanion {
     if (!value) return "";
     const src = String(value).trim();
     if (/^(https?:|data:|blob:)/i.test(src)) return src;
+    if (game.settings.get(MODULE_ID, "publicCoreIconLinks") && /^icons\//i.test(src.replace(/^\/+/, ""))) {
+      return new URL(src.replace(/^\/+/, ""), FORGE_CORE_BAZAAR_ROOT).href;
+    }
     try {
       return new URL(src.replace(/^\/+/, ""), `${window.location.origin}/`).href;
     } catch {
@@ -2256,6 +2310,7 @@ class FoundryCompanion {
       items: game.settings.get(MODULE_ID, EXPORT_OPTION_SETTINGS.items),
       characterSheets: game.settings.get(MODULE_ID, EXPORT_OPTION_SETTINGS.characterSheets),
       embedImageData: game.settings.get(MODULE_ID, "embedImageData"),
+      publicCoreIconLinks: game.settings.get(MODULE_ID, "publicCoreIconLinks"),
       publishAllSidebarData: game.settings.get(MODULE_ID, "publishAllSidebarData")
     };
   }

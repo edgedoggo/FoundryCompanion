@@ -57,6 +57,11 @@
       Use image embedding
     </label>
     <p class="option-note">Embeds base64 image data in the payload. More portable, but creates large data transfers.</p>
+    <label>
+      <input type="checkbox" data-export-option="publicCoreIconLinks" {{#if exportOptions.publicCoreIconLinks}}checked{{/if}}>
+      Automatically use public Forge links for Core Data icons
+    </label>
+    <p class="option-note">Converts partial Core Data icon paths such as <code>icons/...</code> to <code>https://assets.forge-vtt.com/bazaar/core/icons/...</code> before publishing.</p>
   </fieldset>
   <fieldset class="foundry-companion-options">
     <legend>Configure Export Options</legend>
