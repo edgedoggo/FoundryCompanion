@@ -40,6 +40,15 @@ const openApps = new Set();
 let publishTimer = null;
 
 Hooks.once("init", () => {
+  game.settings.registerMenu(MODULE_ID, "publishNow", {
+    name: "FoundryCompanion: Publish to Website",
+    label: "Publish",
+    hint: "Immediately publish the current FoundryCompanion payload to the configured companion website.",
+    icon: "fas fa-upload",
+    type: FoundryCompanionPublishMenu,
+    restricted: true
+  });
+
   game.settings.registerMenu(MODULE_ID, "companion", {
     name: "FoundryCompanion",
     label: "Open",
@@ -311,6 +320,16 @@ Hooks.once("ready", () => {
 
   console.info(`${MODULE_ID} | Ready for GM publishing. Use Configure Settings > Module Settings > FoundryCompanion.`);
 });
+
+class FoundryCompanionPublishMenu extends Application {
+  render(force, options) {
+    FoundryCompanion.publishWebsiteData().catch((error) => {
+      console.error(`${MODULE_ID} | Publish failed`, error);
+      ui.notifications.error(error.message);
+    });
+    return this;
+  }
+}
 
 class FoundryCompanionMenu extends FormApplication {
   static get defaultOptions() {
