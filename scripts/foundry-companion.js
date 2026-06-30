@@ -321,7 +321,7 @@ Hooks.once("ready", () => {
   console.info(`${MODULE_ID} | Ready for GM publishing. Use Configure Settings > Module Settings > FoundryCompanion.`);
 });
 
-class FoundryCompanionPublishMenu extends Application {
+class FoundryCompanionPublishMenu extends FormApplication {
   render(force, options) {
     FoundryCompanion.publishWebsiteData().catch((error) => {
       console.error(`${MODULE_ID} | Publish failed`, error);
